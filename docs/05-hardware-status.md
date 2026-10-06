@@ -46,6 +46,7 @@ From the zeus port, all SM8450-generic:
 | 0006 q6apm poll for SPF readiness | like the downstream driver |
 | 0007 pdr ack service-up before notifying | avoids the servreg ack deadlock |
 | 0008 apr install GPR callback before probe | q6apm's first reply was dropped; `CMD timeout for [1001021]` gone |
+| 0009 libbpf const-correct strstr/strchr results (ours) | lets `resolve_btfids` build on hosts whose libc has C23 const string prototypes (glibc 2.40+, gcc 15, clang 23); needed for the BTF the pmOS kconfig check requires |
 
 Dropped on purpose: 0001 (PM8008 interrupt, zeus-only), 0009/0010/0011/0012/
 0013/0014/0015 (speaker experiments that did not produce sound, and the two
