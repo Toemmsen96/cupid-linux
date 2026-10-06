@@ -1,0 +1,65 @@
+diff --git a/drivers/net/wireless/ath/ath11k/core.h b/drivers/net/wireless/ath/ath11k/core.h
+index a9dc7fe77..d9a680e47 100644
+--- a/drivers/net/wireless/ath/ath11k/core.h
++++ b/drivers/net/wireless/ath/ath11k/core.h
+@@ -984,6 +984,8 @@ struct ath11k_base {
+ 	u8 new_alpha2[3];
+ 	struct workqueue_struct *workqueue_aux;
+ 	struct work_struct reset_work;
++	/* consecutive WMI command timeouts; see ath11k_wmi_cmd_send() */
++	atomic_t wmi_timeout_count;
+ 	atomic_t reset_count;
+ 	atomic_t recovery_count;
+ 	atomic_t recovery_start_count;
+diff --git a/drivers/net/wireless/ath/ath11k/wmi.c b/drivers/net/wireless/ath/ath11k/wmi.c
+index 87abfa547..cc1a3d0d2 100644
+--- a/drivers/net/wireless/ath/ath11k/wmi.c
++++ b/drivers/net/wireless/ath/ath11k/wmi.c
+@@ -294,6 +294,9 @@ static int ath11k_wmi_cmd_send_nowait(struct ath11k_pdev_wmi *wmi, struct sk_buf
+ 	return ret;
+ }
+ 
++/* consecutive unanswered WMI commands before the firmware is reset */
++#define ATH11K_WMI_TIMEOUT_RESET_COUNT	5
++
+ int ath11k_wmi_cmd_send(struct ath11k_pdev_wmi *wmi, struct sk_buff *skb,
+ 			u32 cmd_id)
+ {
+@@ -325,8 +328,35 @@ int ath11k_wmi_cmd_send(struct ath11k_pdev_wmi *wmi, struct sk_buff *skb,
+ 			}), WMI_SEND_TIMEOUT_HZ);
+ 	}
+ 
+-	if (ret == -EAGAIN)
+-		ath11k_warn(wmi_ab->ab, "wmi command %d timeout\n", cmd_id);
++	if (ret == -EAGAIN) {
++		ath11k_warn(ab, "wmi command %d timeout\n", cmd_id);
++
++		/*
++		 * A wedged firmware answers nothing, and nothing above us reacts
++		 * to that - the caller simply retries, for ever. What that looks
++		 * like in practice is a wlan0 that is up but cannot scan, and,
++		 * because the driver's workqueue stays blocked, a machine that
++		 * will not shut down: reboot sits in D state behind it.
++		 *
++		 * A firmware crash gets a reset through MHI's RDDM path. A
++		 * silent timeout gets nothing, so ask for the same reset once
++		 * several commands in a row have gone unanswered.
++		 * ath11k_core_reset() rate limits itself through fail_cont_count
++		 * and ignores the request entirely before the device is
++		 * registered, so this cannot spin.
++		 */
++		if (atomic_inc_return(&ab->wmi_timeout_count) >=
++			    ATH11K_WMI_TIMEOUT_RESET_COUNT &&
++		    test_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags) &&
++		    !test_bit(ATH11K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
++		    !test_bit(ATH11K_FLAG_RECOVERY, &ab->dev_flags)) {
++			atomic_set(&ab->wmi_timeout_count, 0);
++			ath11k_warn(ab, "wmi unresponsive, requesting reset\n");
++			queue_work(ab->workqueue_aux, &ab->reset_work);
++		}
++	} else if (!ret) {
++		atomic_set(&ab->wmi_timeout_count, 0);
++	}
+ 
+ 	if (ret == -ENOBUFS)
+ 		ath11k_warn(wmi_ab->ab, "ce desc not available for wmi command %d\n",

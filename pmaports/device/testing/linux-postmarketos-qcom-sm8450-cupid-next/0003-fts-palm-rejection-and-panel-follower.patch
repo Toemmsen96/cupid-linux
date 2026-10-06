@@ -1,0 +1,211 @@
+diff --git a/drivers/input/touchscreen/fts_spi/fts.c b/drivers/input/touchscreen/fts_spi/fts.c
+index aa6dd5dbb..be69fdb57 100644
+--- a/drivers/input/touchscreen/fts_spi/fts.c
++++ b/drivers/input/touchscreen/fts_spi/fts.c
+@@ -129,6 +129,9 @@ extern int power_supply_is_system_supplied(void);
+ * Release all the touches in the linux input subsystem
+ * @param info pointer to fts_ts_info which contains info about the device and its hw setup
+ */
++/* ids whose contacts were rejected as palm/zone; see fts_in_reject_zone() */
++static unsigned long fts_reject_id;
++
+ void release_all_touches(struct fts_ts_info *info)
+ {
+ 	unsigned int type = MT_TOOL_FINGER;
+@@ -143,6 +146,7 @@ void release_all_touches(struct fts_ts_info *info)
+ 	input_sync(info->input_dev);
+ 	info->touch_id = 0;
+ 	info->temp_touch_id = 0;
++	fts_reject_id = 0;
+ 	info->width_major = 0;
+ 	info->width_minor = 0;
+ 	info->orientation = 0;
+@@ -2353,6 +2357,29 @@ static void fts_nop_event_handler(struct fts_ts_info *info,
+ * Event handler for enter and motion events (EVT_ID_ENTER_POINT, EVT_ID_MOTION_POINT )
+ * report to the linux input system touches with their coordinated and additional informations
+ */
++/*
++ * Palm rejection.
++ *
++ * The firmware already classifies a contact as TOUCH_TYPE_PALM, but this driver
++ * falls it through to MT_TOOL_FINGER and reports it like any fingertip. On a
++ * phone with curved glass that is a stream of spurious touches. Downstream does
++ * this rejection in its separate xiaomi_touch layer, which mainline does not
++ * have.
++ *
++ * The geometric corner zones that used to live here - stock's
++ * fts,touch-cornerzone-filter-ver, converted to this driver's units - are gone.
++ * They were added while coordinates were still being decoded in the wrong
++ * resolution, so every touch landed squashed into the top-left and the zones
++ * never triggered; they logged zero rejections and looked harmless. Once the
++ * super-resolution decode was fixed and coordinates became correct, those boxes
++ * started covering real screen and ate the bottom-left and bottom-right keys of
++ * the on-screen keyboard. Downstream applies those tables through firmware
++ * tuning with far more context than a bounding box, and nothing here reproduces
++ * that, so the honest thing is not to approximate it.
++ */
++
++static unsigned long fts_reject_id;
++
+ static void fts_enter_pointer_event_handler(struct fts_ts_info *info,
+ 					    unsigned char *event)
+ {
+@@ -2398,6 +2425,32 @@ static void fts_enter_pointer_event_handler(struct fts_ts_info *info,
+ 		x = info->board->x_max - x;
+ 	if (info->board->swap_y)
+ 		y = info->board->y_max - y;
++	/*
++	 * Drop palms and contacts starting in a rejection zone. Motion for an
++	 * already-rejected id is dropped too - this handler doubles as the
++	 * motion handler - and a contact that turns into a palm after being
++	 * reported gets its slot released so it cannot stick down forever.
++	 */
++	if (touchType == TOUCH_TYPE_PALM) {
++		if (!test_bit(touchId, &fts_reject_id)) {
++			__set_bit(touchId, &fts_reject_id);
++			if (test_bit(touchId, &info->touch_id)) {
++				input_mt_slot(info->input_dev, touchId);
++				input_mt_report_slot_state(info->input_dev,
++							   MT_TOOL_FINGER, 0);
++				input_report_abs(info->input_dev,
++						 ABS_MT_TRACKING_ID, -1);
++				__clear_bit(touchId, &info->touch_id);
++				__clear_bit(touchId, &info->temp_touch_id);
++			}
++			logError(1, "%s %s: rejected id=%d type=%d (%d,%d)\n",
++				 tag, __func__, touchId, touchType, x, y);
++		}
++		goto no_report;
++	}
++	if (test_bit(touchId, &fts_reject_id))
++		goto no_report;
++
+ 	input_mt_slot(info->input_dev, touchId);
+ 	switch (touchType) {
+ 	case TOUCH_TYPE_FINGER:
+@@ -2479,6 +2532,14 @@ static void fts_leave_pointer_event_handler(struct fts_ts_info *info,
+ 	touchType = event[1] & 0x0F;
+ 	touchId = (event[1] & 0xF0) >> 4;
+ 
++	/* never reported, so there is no slot state to unwind */
++	if (test_bit(touchId, &fts_reject_id)) {
++		__clear_bit(touchId, &fts_reject_id);
++		__clear_bit(touchId, &info->touch_id);
++		__clear_bit(touchId, &info->temp_touch_id);
++		return;
++	}
++
+ 	input_mt_slot(info->input_dev, touchId);
+ 	switch (touchType) {
+ 	case TOUCH_TYPE_FINGER:
+@@ -3655,6 +3716,43 @@ static int fts_mode_handler(struct fts_ts_info *info, int force)
+ /**
+  * Resume work function which perform a system reset, clean all the touches from the linux input system and prepare the ground for enabling the sensing
+  */
++/*
++ * Display state.
++ *
++ * resume_bit gates every touch report, and the only things that ever queue
++ * fts_{suspend,resume}_work are a debugfs helper and system PM. Downstream
++ * drives them from Xiaomi's panel notifier, which does not exist on mainline,
++ * so once the display blanked nothing told this driver to come back and touch
++ * simply stopped until the module was reloaded.
++ *
++ * Mainline's equivalent is drm_panel_follower: the panel calls us around its
++ * own prepare/unprepare, and drm_panel_add_follower() finds the panel through
++ * the "panel" phandle on our own node - the same property the stock devicetree
++ * carries on this touchscreen.
++ */
++static int fts_panel_prepared(struct drm_panel_follower *follower)
++{
++	struct fts_ts_info *info =
++		container_of(follower, struct fts_ts_info, panel_follower);
++
++	queue_work(info->event_wq, &info->resume_work);
++	return 0;
++}
++
++static int fts_panel_unpreparing(struct drm_panel_follower *follower)
++{
++	struct fts_ts_info *info =
++		container_of(follower, struct fts_ts_info, panel_follower);
++
++	queue_work(info->event_wq, &info->suspend_work);
++	return 0;
++}
++
++static const struct drm_panel_follower_funcs fts_panel_follower_funcs = {
++	.panel_prepared = fts_panel_prepared,
++	.panel_unpreparing = fts_panel_unpreparing,
++};
++
+ static void fts_resume_work(struct work_struct *work)
+ {
+ 	struct fts_ts_info *info;
+@@ -4043,6 +4141,24 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
+ 	bdata->support_vsync_mode =
+ 		of_property_read_bool(np, "fts,support-vsync-mode");
+ 
++	/*
++	 * This fork declares support_super_resolution and branches on it when
++	 * decoding a touch event, but never assigns it - so it was always 0 and
++	 * the low-resolution decode was used, while x-max/y-max in the
++	 * devicetree describe the super-resolution axes (14400 x 32000, ten
++	 * times the 1440x3200 panel). A 12-bit coordinate was therefore being
++	 * reported on an axis userspace believed was ten times larger, which
++	 * squashed every touch into the top-left corner, and the low-res y
++	 * formula takes its low bits from the upper nibble of event[3], which is
++	 * why y jumped around while x looked stable.
++	 */
++	if (of_property_read_u32(np, "fts,support-super-resolution",
++				 &bdata->support_super_resolution))
++		bdata->support_super_resolution = 0;
++	logError(1, "%s super resolution: %u\n", tag,
++		 bdata->support_super_resolution);
++
++
+ 	retval = of_property_read_u32(np, "fts,config-array-size",
+ 				      (u32 *)&bdata->config_array_size);
+ 
+@@ -4878,6 +4994,24 @@ static int fts_probe(struct spi_device *client)
+ 		goto ProbeErrorExit_6;
+ 	}
+ 	info->vsync_fps = 120;
++
++	/*
++	 * Optional: without a "panel" phandle there is nothing to follow, and
++	 * touch still works for as long as the display never blanks.
++	 */
++	if (of_property_present(info->dev->of_node, "panel")) {
++		info->panel_follower.funcs = &fts_panel_follower_funcs;
++		error = devm_drm_panel_add_follower(info->dev,
++						    &info->panel_follower);
++		if (error) {
++			logError(1, "%s cannot follow panel: %d\n", tag, error);
++			goto ProbeErrorExit_6;
++		}
++		logError(1, "%s following panel for display state\n", tag);
++	} else {
++		logError(1, "%s no panel phandle, display state not tracked\n",
++			 tag);
++	}
+ #ifdef CONFIG_SECURE_TOUCH
+ 	logError(1, "%s %s create secure touch file...\n", tag, __func__);
+ 	error = fts_secure_init(info);
+diff --git a/drivers/input/touchscreen/fts_spi/fts.h b/drivers/input/touchscreen/fts_spi/fts.h
+index 9f796d420..b1f24c135 100644
+--- a/drivers/input/touchscreen/fts_spi/fts.h
++++ b/drivers/input/touchscreen/fts_spi/fts.h
+@@ -1,3 +1,4 @@
++#include <drm/drm_panel.h>
+ /*
+  * fts.c
+  *
+@@ -273,6 +274,7 @@ struct fts_ts_info {
+ 	struct work_struct work;
+ 	struct work_struct suspend_work;
+ 	struct work_struct resume_work;
++	struct drm_panel_follower panel_follower;
+ 	struct work_struct cmd_update_work;
+ 	struct work_struct sleep_work;
+ 	struct delayed_work thp_signal_work;

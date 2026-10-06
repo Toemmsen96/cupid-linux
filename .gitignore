@@ -1,0 +1,9 @@
+# pmbootstrap config + pmaports checkout created by scripts/setup.sh
+/work/
+# built images (symlinks into the pmbootstrap work dir)
+/out/
+# scripts/dump-stock.sh output: stock firmware/devicetree, keep private
+/stock-dump/
+# arch/build-arch-rootfs.sh output
+/arch/out/
+/arch/cache/
