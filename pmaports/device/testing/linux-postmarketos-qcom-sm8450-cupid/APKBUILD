@@ -58,6 +58,7 @@ source="
 	0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
 	0007-pdr-ack-service-up-before-notifying-clients.patch
 	0008-apr-install-the-gpr-callback-before-probing.patch
+	0009-libbpf-const-correct-strstr-strchr-results.patch
 "
 builddir="$srcdir/$_repo-$_commit"
 
@@ -103,4 +104,5 @@ e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c3841
 34280f458d0627be7187e4727f207ebeef125e26cdd1ac5c282fd326ae0c5269831b06c5784748ea746930a8170b57e55ffb0a8fe45f08d370b32ce2b7830cb4  0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
 c37614a0c561893f929594558aadd590d12ffaeaa6b8d9afef7a546a36a30c08b0bd94a19e5fa4208b2b1f24ed95a62d66374f62a49af014b69e82ba4ce27cf8  0007-pdr-ack-service-up-before-notifying-clients.patch
 bd27da92de7f0e161134a0c0a18cf57d9e6a74ed8c599006b79e864d405c02b8da62bb02aea6a10c79838f6132d09580f2c2a5e89e5de4dbf6303c1abd655744  0008-apr-install-the-gpr-callback-before-probing.patch
+c740d274fe9d81bb3f92e53235491de91a99066567dae74b56ed66a04b5461bf6f44a050895b55fc854c844eba0660913d04f58c1e276263b23d520d0d0b3729  0009-libbpf-const-correct-strstr-strchr-results.patch
 "

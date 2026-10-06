@@ -32,9 +32,10 @@ source=(
 	"$_pm/0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch"
 	"$_pm/0007-pdr-ack-service-up-before-notifying-clients.patch"
 	"$_pm/0008-apr-install-the-gpr-callback-before-probing.patch"
+	"$_pm/0009-libbpf-const-correct-strstr-strchr-results.patch"
 )
 sha512sums=('75fbb81e0d2b1a0a6df41a6f6d0cf923074ebd1288354fa22647648bdfcd93413efaea55dd05d07132b5ef0cca62d5f137d7454d5455ef7044ac81d8b04ff385'
-            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 prepare() {
 	cd "linux-$_commit"
