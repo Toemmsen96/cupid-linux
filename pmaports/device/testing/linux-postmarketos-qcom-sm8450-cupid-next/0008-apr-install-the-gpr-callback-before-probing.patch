@@ -1,0 +1,40 @@
+diff --git a/drivers/soc/qcom/apr.c b/drivers/soc/qcom/apr.c
+index a956c407c..f20f6506f 100644
+--- a/drivers/soc/qcom/apr.c
++++ b/drivers/soc/qcom/apr.c
+@@ -136,6 +136,7 @@ static int pkt_router_send_svc_pkt(struct pkt_router_svc *svc, struct gpr_pkt *p
+ 	ret = rpmsg_trysend(pr->ch, pkt, hdr->pkt_size);
+ 	spin_unlock_irqrestore(&svc->lock, flags);
+ 
++
+ 	return ret ? ret : hdr->pkt_size;
+ }
+ 
+@@ -367,9 +368,25 @@ static int apr_device_probe(struct device *dev)
+ 	struct apr_driver *adrv = to_apr_driver(dev->driver);
+ 	int ret;
+ 
++	/*
++	 * Install the callback before probing, not after.
++	 *
++	 * A driver may well send a command from its probe and wait for the
++	 * reply - q6apm does exactly that, asking the ADSP for its signal
++	 * processing framework state. The remote side answers within a few
++	 * milliseconds, long before probe() returns, and with the callback
++	 * still unset gpr_do_rx_callback() drops the packet silently: it finds
++	 * the service, sees no callback, and returns. The caller then waits out
++	 * its full timeout for a reply that already came and went.
++	 *
++	 * Nothing can be delivered before the device exists, so wiring this up
++	 * first is safe; clear it again if probe fails.
++	 */
++	adev->svc.callback = adrv->gpr_callback;
++
+ 	ret = adrv->probe(adev);
+-	if (!ret)
+-		adev->svc.callback = adrv->gpr_callback;
++	if (ret)
++		adev->svc.callback = NULL;
+ 
+ 	return ret;
+ }

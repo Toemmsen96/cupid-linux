@@ -1,0 +1,64 @@
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index dc102d8bd..3b39de143 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -278,6 +278,8 @@ struct qcom_pcie {
+ 	bool use_pm_opp;
+ };
+ 
++#define QCOM_PCIE_LINK_RETRIES		3
++
+ #define to_qcom_pcie(x)		dev_get_drvdata((x)->dev)
+ 
+ static void qcom_ep_reset_assert(struct qcom_pcie *pcie)
+@@ -297,16 +299,47 @@ static void qcom_ep_reset_deassert(struct qcom_pcie *pcie)
+ static int qcom_pcie_start_link(struct dw_pcie *pci)
+ {
+ 	struct qcom_pcie *pcie = to_qcom_pcie(pci);
++	int i, ret;
+ 
+ 	if (pcie_link_speed[pci->max_link_speed] == PCIE_SPEED_16_0GT) {
+ 		qcom_pcie_common_set_16gt_equalization(pci);
+ 		qcom_pcie_common_set_16gt_lane_margining(pci);
+ 	}
+ 
+-	/* Enable Link Training state machine */
+-	if (pcie->cfg->ops->ltssm_enable)
+-		pcie->cfg->ops->ltssm_enable(pcie);
++	/*
++	 * Retry training, giving the endpoint a fresh PERST each time.
++	 *
++	 * pci_pwrctrl_create_devices() runs from pci_bus_add_device(), i.e. after
++	 * the bus has been scanned and therefore after this point, so on a board
++	 * where a power sequencer gates the endpoint the part can still be coming
++	 * up while we train - and PCIe requires PERST# to be held across the
++	 * endpoint's power-on, so once it has been released too early the link
++	 * cannot be recovered by retraining alone; the endpoint needs the reset.
++	 *
++	 * Asserting and deasserting PERST between attempts gives a late-powered
++	 * device a correct reset sequence. qcom_ep_reset_deassert() already holds
++	 * PERST for the 100ms the spec requires, so each retry costs that much
++	 * only when the link is actually down.
++	 */
++	for (i = 0; i < QCOM_PCIE_LINK_RETRIES; i++) {
++		/* Enable Link Training state machine */
++		if (pcie->cfg->ops->ltssm_enable)
++			pcie->cfg->ops->ltssm_enable(pcie);
++
++		ret = dw_pcie_wait_for_link(pci);
++		if (!ret)
++			return 0;
++
++		if (i + 1 < QCOM_PCIE_LINK_RETRIES) {
++			dev_info(pci->dev,
++				 "link down, resetting endpoint and retrying (%d/%d)\n",
++				 i + 1, QCOM_PCIE_LINK_RETRIES - 1);
++			qcom_ep_reset_assert(pcie);
++			qcom_ep_reset_deassert(pcie);
++		}
++	}
+ 
++	/* let the caller report the failure as it always has */
+ 	return 0;
+ }
+ 

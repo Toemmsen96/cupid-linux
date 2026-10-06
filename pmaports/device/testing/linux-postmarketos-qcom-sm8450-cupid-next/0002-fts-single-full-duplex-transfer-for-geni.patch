@@ -1,0 +1,318 @@
+diff --git a/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c b/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c
+index d64db14cc..4fe578e61 100644
+--- a/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c
++++ b/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c
+@@ -142,31 +142,98 @@ struct spi_device *getClient(void)
+ * @param byteToRead number of bytes to read
+ * @return OK if success or an error code which specify the type of error encountered
+ */
++#ifndef I2C_INTERFACE
++/**
++* Perform a write-then-read as a SINGLE full duplex transfer.
++*
++* This driver natively splits a register read into a TX-only transfer carrying
++* the address followed by an RX-only transfer collecting the data. A bitbanged
++* bus holds the chip select low across both and the FingerTip answers normally,
++* which is how we know the chip is healthy. Qualcomm's GENI controller does not
++* reproduce that: every read split this way comes back as exactly 0x00, never
++* garbage and never partial, and with the GPI DMA channels removed the transfer
++* is rejected outright instead.
++*
++* Flattening the phases into one transfer removes the question entirely - the
++* command bytes are padded with zeros out to the full length, and the reply is
++* taken from the tail of the rx buffer, which is what full duplex gives us for
++* free. One transfer per message also means no inter-transfer behaviour for a
++* controller to get wrong.
++*
++* @param cmd1 first command block, may be NULL
++* @param cmd1Len size of cmd1
++* @param cmd2 second command block, may be NULL
++* @param cmd2Len size of cmd2
++* @param outBuf where the reply is copied, may be NULL when byteToRead is 0
++* @param byteToRead number of bytes to read after the command blocks
++* @return OK, or a negative errno straight from spi_sync
++*/
++static int fts_spi_wr(const u8 *cmd1, int cmd1Len, const u8 *cmd2, int cmd2Len,
++		      u8 *outBuf, int byteToRead)
++{
++	struct spi_message msg;
++	struct spi_transfer transfer = { 0 };
++	int head = cmd1Len + cmd2Len;
++	int total = head + byteToRead;
++	int ret = -1, retry = 0;
++	u8 *tx, *rx;
++
++	if (total <= 0)
++		return ERROR_OP_NOT_ALLOW;
++
++	/*
++	 * ponytail: one allocation pair per transfer. The touch path runs in a
++	 * threaded irq so GFP_KERNEL is fine; swap for a preallocated scratch
++	 * buffer under the bus lock if this ever shows up in a profile.
++	 */
++	tx = kzalloc(total, GFP_KERNEL);
++	rx = kzalloc(total, GFP_KERNEL);
++	if (!tx || !rx) {
++		kfree(tx);
++		kfree(rx);
++		return ERROR_ALLOC;
++	}
++
++	if (cmd1Len)
++		memcpy(tx, cmd1, cmd1Len);
++	if (cmd2Len)
++		memcpy(tx + cmd1Len, cmd2, cmd2Len);
++
++	spi_message_init(&msg);
++	transfer.len = total;
++	transfer.tx_buf = tx;
++	transfer.rx_buf = rx;
++	transfer.delay.value = SPI_DELAY_CS;
++	transfer.delay.unit = SPI_DELAY_UNIT_USECS;
++	spi_message_add_tail(&transfer, &msg);
++
++	while (retry < I2C_RETRY && ret < OK) {
++		ret = spi_sync(getClient(), &msg);
++		retry++;
++		if (ret < OK)
++			mdelay(I2C_WAIT_BEFORE_RETRY);
++	}
++
++	if (ret >= 0 && byteToRead && outBuf)
++		memcpy(outBuf, rx + head, byteToRead);
++
++	kfree(tx);
++	kfree(rx);
++	return ret < 0 ? ret : OK;
++}
++#endif
++
+ int fts_read(u8 *outBuf, int byteToRead)
+ {
++#ifdef I2C_INTERFACE
+ 	int ret = -1;
+ 	int retry = 0;
+-
+-#ifdef I2C_INTERFACE
+ 	struct i2c_msg I2CMsg[1];
+ 
+ 	I2CMsg[0].addr = (__u16)I2CSAD;
+ 	I2CMsg[0].flags = (__u16)I2C_M_RD;
+ 	I2CMsg[0].len = (__u16)byteToRead;
+ 	I2CMsg[0].buf = (__u8 *)outBuf;
+-#else
+-	struct spi_message msg;
+-	struct spi_transfer transfer[1] = { { 0 } };
+-
+-	spi_message_init(&msg);
+-
+-	transfer[0].len = byteToRead;
+-	transfer[0].delay.value = SPI_DELAY_CS;
+-	transfer[0].delay.unit = SPI_DELAY_UNIT_USECS;
+-	transfer[0].tx_buf = NULL;
+-	transfer[0].rx_buf = outBuf;
+-	spi_message_add_tail(&transfer[0], &msg);
+-#endif
+ 
+ 	if (client == NULL)
+ 		return ERROR_BUS_O;
+@@ -176,12 +243,7 @@ int fts_read(u8 *outBuf, int byteToRead)
+ 		return ERROR_BUS_O;
+ 	}
+ 	while (retry < I2C_RETRY && ret < OK) {
+-#ifdef I2C_INTERFACE
+ 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 1);
+-#else
+-		ret = spi_sync(getClient(), &msg);
+-#endif
+-
+ 		retry++;
+ 		if (ret < OK)
+ 			mdelay(I2C_WAIT_BEFORE_RETRY);
+@@ -191,6 +253,24 @@ int fts_read(u8 *outBuf, int byteToRead)
+ 		return ERROR_BUS_R;
+ 	}
+ 	return OK;
++#else
++	int ret;
++
++	if (client == NULL)
++		return ERROR_BUS_O;
++	if (fts_info && fts_info->tp_pm_suspend) {
++		logError(1, "%s %s system suspend,don't to transfer\n", tag,
++			 __func__);
++		return ERROR_BUS_O;
++	}
++
++	ret = fts_spi_wr(NULL, 0, NULL, 0, outBuf, byteToRead);
++	if (ret < 0) {
++		logError(1, "%s %s: ERROR %08X\n", tag, __func__, ERROR_BUS_R);
++		return ERROR_BUS_R;
++	}
++	return OK;
++#endif
+ }
+ 
+ /**
+@@ -203,10 +283,9 @@ int fts_read(u8 *outBuf, int byteToRead)
+ */
+ int fts_writeRead(u8 *cmd, int cmdLength, u8 *outBuf, int byteToRead)
+ {
++#ifdef I2C_INTERFACE
+ 	int ret = -1;
+ 	int retry = 0;
+-
+-#ifdef I2C_INTERFACE
+ 	struct i2c_msg I2CMsg[2];
+ 
+ 	I2CMsg[0].addr = (__u16)I2CSAD;
+@@ -219,42 +298,15 @@ int fts_writeRead(u8 *cmd, int cmdLength, u8 *outBuf, int byteToRead)
+ 	I2CMsg[1].len = byteToRead;
+ 	I2CMsg[1].buf = (__u8 *)outBuf;
+ 
+-#else
+-	struct spi_message msg;
+-	struct spi_transfer transfer[2] = { { 0 }, { 0 } };
+-
+-	spi_message_init(&msg);
+-
+-	transfer[0].len = cmdLength;
+-	transfer[0].tx_buf = cmd;
+-	transfer[0].rx_buf = NULL;
+-	spi_message_add_tail(&transfer[0], &msg);
+-
+-	transfer[1].len = byteToRead;
+-	transfer[1].delay.value = SPI_DELAY_CS;
+-	transfer[1].delay.unit = SPI_DELAY_UNIT_USECS;
+-	transfer[1].tx_buf = NULL;
+-	transfer[1].rx_buf = outBuf;
+-	spi_message_add_tail(&transfer[1], &msg);
+-
+-#endif
+-
+ 	if (client == NULL)
+ 		return ERROR_BUS_O;
+-
+ 	if (fts_info && fts_info->tp_pm_suspend) {
+ 		logError(1, "%s %s system suspend,don't to transfer\n", tag,
+ 			 __func__);
+ 		return ERROR_BUS_O;
+ 	}
+-
+ 	while (retry < I2C_RETRY && ret < OK) {
+-#ifdef I2C_INTERFACE
+ 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 2);
+-#else
+-		ret = spi_sync(getClient(), &msg);
+-#endif
+-
+ 		retry++;
+ 		if (ret < OK)
+ 			mdelay(I2C_WAIT_BEFORE_RETRY);
+@@ -264,6 +316,24 @@ int fts_writeRead(u8 *cmd, int cmdLength, u8 *outBuf, int byteToRead)
+ 		return ERROR_BUS_WR;
+ 	}
+ 	return OK;
++#else
++	int ret;
++
++	if (client == NULL)
++		return ERROR_BUS_O;
++	if (fts_info && fts_info->tp_pm_suspend) {
++		logError(1, "%s %s system suspend,don't to transfer\n", tag,
++			 __func__);
++		return ERROR_BUS_O;
++	}
++
++	ret = fts_spi_wr(cmd, cmdLength, NULL, 0, outBuf, byteToRead);
++	if (ret < 0) {
++		logError(1, "%s %s: ERROR %08X\n", tag, __func__, ERROR_BUS_WR);
++		return ERROR_BUS_WR;
++	}
++	return OK;
++#endif
+ }
+ 
+ /**
+@@ -556,10 +626,8 @@ int fts_writeFwCmd(u8 *cmd, int cmdLength)
+ int fts_writeThenWriteRead(u8 *writeCmd1, int writeCmdLength, u8 *readCmd1,
+ 			   int readCmdLength, u8 *outBuf, int byteToRead)
+ {
+-	int ret = -1;
+-	int retry = 0;
+-
+ #ifdef I2C_INTERFACE
++
+ 	struct i2c_msg I2CMsg[3];
+ 
+ 	I2CMsg[0].addr = (__u16)I2CSAD;
+@@ -576,29 +644,6 @@ int fts_writeThenWriteRead(u8 *writeCmd1, int writeCmdLength, u8 *readCmd1,
+ 	I2CMsg[2].flags = I2C_M_RD;
+ 	I2CMsg[2].len = byteToRead;
+ 	I2CMsg[2].buf = (__u8 *)outBuf;
+-#else
+-	struct spi_message msg;
+-	struct spi_transfer transfer[3] = { { 0 }, { 0 }, { 0 } };
+-
+-	spi_message_init(&msg);
+-
+-	transfer[0].len = writeCmdLength;
+-	transfer[0].tx_buf = writeCmd1;
+-	transfer[0].rx_buf = NULL;
+-	spi_message_add_tail(&transfer[0], &msg);
+-
+-	transfer[1].len = readCmdLength;
+-	transfer[1].tx_buf = readCmd1;
+-	transfer[1].rx_buf = NULL;
+-	spi_message_add_tail(&transfer[1], &msg);
+-
+-	transfer[2].len = byteToRead;
+-	transfer[2].delay.value = SPI_DELAY_CS;
+-	transfer[2].delay.unit = SPI_DELAY_UNIT_USECS;
+-	transfer[2].tx_buf = NULL;
+-	transfer[2].rx_buf = outBuf;
+-	spi_message_add_tail(&transfer[2], &msg);
+-#endif
+ 
+ 	if (client == NULL)
+ 		return ERROR_BUS_O;
+@@ -608,21 +653,35 @@ int fts_writeThenWriteRead(u8 *writeCmd1, int writeCmdLength, u8 *readCmd1,
+ 		return ERROR_BUS_O;
+ 	}
+ 	while (retry < I2C_RETRY && ret < OK) {
+-#ifdef I2C_INTERFACE
+ 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 3);
+-#else
+-		ret = spi_sync(getClient(), &msg);
+-#endif
+ 		retry++;
+ 		if (ret < OK)
+ 			mdelay(I2C_WAIT_BEFORE_RETRY);
+ 	}
++	if (ret < 0) {
++		logError(1, "%s %s: ERROR %08X\n", tag, __func__, ERROR_BUS_WR);
++		return ERROR_BUS_WR;
++	}
++	return OK;
++#else
++	int ret;
++
++	if (client == NULL)
++		return ERROR_BUS_O;
++	if (fts_info && fts_info->tp_pm_suspend) {
++		logError(1, "%s %s system suspend,don't to transfer\n", tag,
++			 __func__);
++		return ERROR_BUS_O;
++	}
+ 
++	ret = fts_spi_wr(writeCmd1, writeCmdLength, readCmd1, readCmdLength,
++			 outBuf, byteToRead);
+ 	if (ret < 0) {
+ 		logError(1, "%s %s: ERROR %08X\n", tag, __func__, ERROR_BUS_WR);
+ 		return ERROR_BUS_WR;
+ 	}
+ 	return OK;
++#endif
+ }
+ 
+ /**

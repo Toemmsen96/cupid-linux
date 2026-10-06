@@ -1,0 +1,22 @@
+# Installed by firstboot.sh on the Arch rootfs (one package per line, # comments)
+networkmanager
+bluez
+bluez-utils
+alsa-ucm-conf
+alsa-utils
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+mesa
+vulkan-freedreno
+phosh
+phoc
+phosh-mobile-settings
+phosh-osk-stevia
+gnome-console
+gnome-text-editor
+epiphany
+squeekboard
+htop
+vim

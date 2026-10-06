@@ -1,0 +1,41 @@
+diff --git a/drivers/soc/qcom/pdr_interface.c b/drivers/soc/qcom/pdr_interface.c
+index 328b6153b..09d7b06a7 100644
+--- a/drivers/soc/qcom/pdr_interface.c
++++ b/drivers/soc/qcom/pdr_interface.c
+@@ -281,13 +281,35 @@ static void pdr_indack_work(struct work_struct *work)
+ 	list_for_each_entry_safe(ind, tmp, &pdr->indack_list, node) {
+ 		pds = ind->pds;
+ 
++		/*
++		 * For a service going DOWN the ack has to wait: it tells the
++		 * remote side that clients have released the PD's resources.
++		 *
++		 * Coming UP is the opposite, and acking last deadlocks. The
++		 * status callback registers the packet-router's children and
++		 * probes them, and on this SoC one of those is q6apm, whose
++		 * probe asks the ADSP for its signal-processing-framework
++		 * state. The ADSP will not answer that until its audio PD is
++		 * fully up, which it will not consider done until this ack
++		 * arrives - so each side waits for the other, the ADSP's ack
++		 * timer expires and it reports a fatal error:
++		 *
++		 *   Servreg ack timedout:msm/adsp/audio_pd:State:0x1fffffff
++		 *
++		 * Nothing is being released here, so ack an UP indication
++		 * before running the callback.
++		 */
++		if (ind->curr_state == SERVREG_SERVICE_STATE_UP)
++			pdr_send_indack_msg(pdr, pds, ind->transaction_id);
++
+ 		mutex_lock(&pdr->status_lock);
+ 		pds->state = ind->curr_state;
+ 		pdr->status(pds->state, pds->service_path, pdr->priv);
+ 		mutex_unlock(&pdr->status_lock);
+ 
+ 		/* Ack the indication after clients release the PD resources */
+-		pdr_send_indack_msg(pdr, pds, ind->transaction_id);
++		if (ind->curr_state != SERVREG_SERVICE_STATE_UP)
++			pdr_send_indack_msg(pdr, pds, ind->transaction_id);
+ 
+ 		mutex_lock(&pdr->list_lock);
+ 		list_del(&ind->node);

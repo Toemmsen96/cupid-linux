@@ -1,0 +1,72 @@
+# Maintainer: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+# Arch Linux ARM kernel package for the Xiaomi 12 (cupid).
+#
+# Same source, config, devicetree and patches as
+# pmaports/device/testing/linux-postmarketos-qcom-sm8450-cupid; this file reads
+# them from that directory so there is one copy to maintain. Build with makepkg
+# on an aarch64 Arch system (the phone, or a container with qemu-user-static).
+# Untested so far; the pmaports package is the reference.
+#
+#   cd arch && makepkg -s
+#   sudo pacman -U linux-cupid-*.pkg.tar.zst
+#   ./mkbootimg-cupid.sh            # assembles boot.img with the Arch initramfs
+pkgname=linux-cupid
+pkgver=6.13.0rc3
+pkgrel=1
+pkgdesc="Mainline kernel for the Xiaomi 12 (cupid), sm8450-mainline fork"
+arch=(aarch64)
+url="https://github.com/sm8450-mainline/linux"
+license=(GPL-2.0-only)
+makedepends=(bc bison flex openssl python kmod)
+options=(!strip !debug)
+_commit=bf1d29fced6e156dd6090a9b6600a8c44259c114
+_pm="../pmaports/device/testing/linux-postmarketos-qcom-sm8450-cupid"
+source=(
+	"linux-$_commit.tar.gz::$url/archive/$_commit/linux-$_commit.tar.gz"
+	"$_pm/config-postmarketos-qcom-sm8450-cupid.aarch64"
+	"$_pm/sm8450-xiaomi-cupid.dts"
+	"$_pm/0002-fts-single-full-duplex-transfer-for-geni.patch"
+	"$_pm/0003-fts-palm-rejection-and-panel-follower.patch"
+	"$_pm/0004-pcie-qcom-retry-link-training-with-endpoint-reset.patch"
+	"$_pm/0005-ath11k-reset-the-firmware-when-wmi-stops-answering.patch"
+	"$_pm/0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch"
+	"$_pm/0007-pdr-ack-service-up-before-notifying-clients.patch"
+	"$_pm/0008-apr-install-the-gpr-callback-before-probing.patch"
+)
+sha512sums=('75fbb81e0d2b1a0a6df41a6f6d0cf923074ebd1288354fa22647648bdfcd93413efaea55dd05d07132b5ef0cca62d5f137d7454d5455ef7044ac81d8b04ff385'
+            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+prepare() {
+	cd "linux-$_commit"
+	for p in "$srcdir"/*.patch; do
+		patch -p1 -i "$p"
+	done
+	cp "$srcdir/sm8450-xiaomi-cupid.dts" arch/arm64/boot/dts/qcom/
+	cp "$srcdir/config-postmarketos-qcom-sm8450-cupid.aarch64" .config
+	# Arch's mkinitcpio needs these built in or as modules; the pmOS config
+	# already has ext4, f2fs and the USB gadget bits.
+	make ARCH=arm64 olddefconfig
+}
+
+build() {
+	cd "linux-$_commit"
+	make ARCH=arm64 Image.gz dtbs modules
+}
+
+package() {
+	cd "linux-$_commit"
+	local release
+	release="$(make -s ARCH=arm64 kernelrelease)"
+	make ARCH=arm64 INSTALL_MOD_PATH="$pkgdir/usr" INSTALL_MOD_STRIP=1 modules_install
+	rm -f "$pkgdir/usr/lib/modules/$release"/{build,source}
+	install -Dm644 arch/arm64/boot/Image.gz "$pkgdir/boot/vmlinuz-cupid"
+	install -Dm644 arch/arm64/boot/dts/qcom/sm8450-xiaomi-cupid.dtb \
+		"$pkgdir/boot/dtbs/qcom/sm8450-xiaomi-cupid.dtb"
+	echo "$release" > "$pkgdir/boot/kernel.release"
+	install -Dm644 /dev/stdin "$pkgdir/usr/share/mkinitcpio/cupid.preset" <<EOF
+# mkinitcpio preset for the cupid kernel
+ALL_kver="/boot/vmlinuz-cupid"
+PRESETS=('default')
+default_image="/boot/initramfs-cupid.img"
+EOF
+}

@@ -1,0 +1,125 @@
+# Maintainer: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+# Proprietary firmware for the Xiaomi 12 (cupid).
+#
+# The remoteproc, GPU and IPA blobs come from the sm8450-mainline firmware
+# repository. The upstream pmaports package fetches it from
+# git.mainlining.org, which has been returning 502 for a long time; GitHub
+# hosts the same repository and its archive contains the LFS-stored modem.mbn
+# as a real file (verified: 108 MB ELF, same sha512 as the LFS object).
+#
+# The touchscreen firmware is not part of that repository. The ST FTS driver
+# refuses to probe without it (FW_UPDATE_ON_PROBE returns -ENODEV), so it is
+# fetched from the LineageOS vendor blob repository for cupid, pinned to a
+# commit.
+pkgname=firmware-xiaomi-cupid
+pkgver=2
+pkgrel=0
+pkgdesc="Firmware for Xiaomi 12"
+subpackages="
+	$pkgname-adsp
+	$pkgname-cdsp
+	$pkgname-gpu
+	$pkgname-initramfs
+	$pkgname-ipa
+	$pkgname-modem
+	$pkgname-slpi
+	$pkgname-touchscreen
+	"
+url="https://github.com/sm8450-mainline/firmware-xiaomi-cupid"
+arch="aarch64"
+license="proprietary"
+options="!check !strip !archcheck !tracedeps pmb:cross-native"
+_commit="5da2787e4504ddb00107015432fd936156024ebc"
+_muppets_commit="ba672d8f47c5533b2fb45bae5b4528594da70107"
+_muppets="https://raw.githubusercontent.com/TheMuppets/proprietary_vendor_xiaomi_cupid/$_muppets_commit/proprietary/vendor/firmware"
+source="
+	$pkgname-$_commit.tar.gz::$url/archive/$_commit.tar.gz
+	30-initramfs-firmware.files
+	st_fts_l3-$_muppets_commit.ftb::$_muppets/st_fts_l3.ftb
+	st_fts_l3_thp-$_muppets_commit.ftb::$_muppets/st_fts_l3_thp.ftb
+	stm_fts_production_limits-$_muppets_commit.csv::$_muppets/stm_fts_production_limits.csv
+"
+builddir="$srcdir/$pkgname-$_commit"
+
+package() {
+	# parent package is empty
+	mkdir -p "$pkgdir"
+}
+
+adsp() {
+	pkgdesc="Xiaomi 12 adsp firmware"
+
+	install -Dm644 "$builddir"/adsp* -t \
+		"$subpkgdir/lib/firmware/qcom/sm8450/cupid"
+}
+
+cdsp() {
+	pkgdesc="Xiaomi 12 cdsp firmware"
+
+	install -Dm644 "$builddir"/cdsp* -t \
+		"$subpkgdir/lib/firmware/qcom/sm8450/cupid"
+}
+
+gpu() {
+	pkgdesc="Xiaomi 12 gpu firmware"
+
+	install -Dm644 "$builddir"/a730* -t \
+		"$subpkgdir/lib/firmware/qcom/"
+	install -Dm644 "$builddir"/gmu_gen7* -t \
+		"$subpkgdir/lib/firmware/qcom/"
+}
+
+initramfs() {
+	pkgdesc="Xiaomi 12 firmware to be included in the initramfs"
+
+	install -Dm644 "$srcdir/30-initramfs-firmware.files" -t \
+		"$subpkgdir"/usr/share/mkinitfs/files
+}
+
+ipa() {
+	pkgdesc="Xiaomi 12 ipa firmware"
+
+	install -Dm644 "$builddir"/ipa_fws.* -t \
+		"$subpkgdir/lib/firmware/qcom/sm8450/cupid"
+}
+
+modem() {
+	pkgdesc="Xiaomi 12 modem firmware"
+
+	# cp because of the modem_pr directory
+	mkdir -p "$subpkgdir/lib/firmware/qcom/sm8450/cupid"
+	cp -r "$builddir"/modem* \
+		"$subpkgdir/lib/firmware/qcom/sm8450/cupid"
+	find "$subpkgdir/lib/firmware/qcom/sm8450/cupid" \
+		-type f -exec chmod 0644 {} \;
+}
+
+slpi() {
+	pkgdesc="Xiaomi 12 slpi firmware"
+
+	install -Dm644 "$builddir"/slpi* -t \
+		"$subpkgdir/lib/firmware/qcom/sm8450/cupid"
+}
+
+# NB: must not be called "-touch": abuild derives the shell function name from
+# the suffix, and a touch() function shadows the touch(1) abuild itself uses.
+touchscreen() {
+	pkgdesc="Xiaomi 12 touchscreen firmware (ST FTS)"
+
+	# The driver calls request_firmware() with the bare names from the
+	# devicetree, so these go at the top of /lib/firmware.
+	install -Dm644 "$srcdir"/st_fts_l3-$_muppets_commit.ftb \
+		"$subpkgdir"/lib/firmware/st_fts_l3.ftb
+	install -Dm644 "$srcdir"/st_fts_l3_thp-$_muppets_commit.ftb \
+		"$subpkgdir"/lib/firmware/st_fts_l3_thp.ftb
+	install -Dm644 "$srcdir"/stm_fts_production_limits-$_muppets_commit.csv \
+		"$subpkgdir"/lib/firmware/stm_fts_production_limits.csv
+}
+
+sha512sums="
+fdaa246049e1e00e01f83c203f978389d2f4474d1b093a9737fb67b4581a6dabc3428c7912a348b50c0d6ce19da77c190048683afe876c9098024bd04ad2c601  firmware-xiaomi-cupid-5da2787e4504ddb00107015432fd936156024ebc.tar.gz
+60c1d9f60ed66c55b64b035d2b8296c1d090048473d2f4a07136feca52d8b7ef829e02d7c37e58cb7196907c20160061def5fd2109de58b0d7981c9af345c5dc  30-initramfs-firmware.files
+e6624bb91a1477e6fd0a3a0c4ce93707d5827053d19586142504626b98af2aaac869969c53e0efb36b8b5d9be86c5e077e1ab6849753ac6800c57a858b1c6ce6  st_fts_l3-ba672d8f47c5533b2fb45bae5b4528594da70107.ftb
+f39e70316b07ececbec880b96fa9f0661262f92074d666f981ff174f2a5f22a65e81b3be3b342a4edef40d572279a5a58d0f21dc57666c7089e1fb88f14ac9c2  st_fts_l3_thp-ba672d8f47c5533b2fb45bae5b4528594da70107.ftb
+df3663ec88fed126f5eea21cd02526a7dd3ef9f676545f3d883f4f7223c2ece49cb485b839846d7bca418d711f1059f78afeaa513b28263fa6f49106f554cce5  stm_fts_production_limits-ba672d8f47c5533b2fb45bae5b4528594da70107.csv
+"

@@ -1,0 +1,106 @@
+# Maintainer: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+# Kernel for the Xiaomi 12 (cupid).
+#
+# Why this exists instead of using linux-postmarketos-qcom-sm8450: that package
+# pins a 2023 commit (v6.5) of the sm8450-mainline fork which predates the
+# cupid devicetree, the cupid panel driver (panel-l3-42-02-0a-dsc.c) and the
+# ST FTS SPI touch driver. All three live in the fork's next-new branch.
+#
+# This package pins next-new at 6.13.0-rc3, the exact tree the Xiaomi 12 Pro
+# (zeus, same SoC and bootloader generation) port was brought up and verified
+# on. The patches are the SM8450-generic bring-up fixes from that port
+# (https://github.com/Blaze414/postmarketOS-zeus): touch reads over GENI SPI,
+# PCIe link training for the WCN6855, ath11k recovery and the ADSP audio
+# service races. The cupid devicetree ships here in full with the cupid fixes
+# applied on top of the fork's version; see the cupid-linux README for the
+# list.
+_flavor="postmarketos-qcom-sm8450-cupid"
+pkgname=linux-$_flavor
+pkgver=6.13.0_rc3
+pkgrel=0
+pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.13-rc3 base with bring-up fixes"
+arch="aarch64"
+_carch="arm64"
+url="https://github.com/sm8450-mainline/linux"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps
+	pmb:cross-native
+	pmb:kconfigcheck-nftables
+	"
+# python3: drivers/gpu/drm/msm generates its register headers at build time
+# with registers/gen_header.py.
+makedepends="
+	bison
+	elfutils-dev
+	findutils
+	flex
+	installkernel
+	linux-headers
+	openssl-dev
+	pahole
+	perl
+	python3
+	"
+
+_repo="linux"
+_config="config-$_flavor.$arch"
+# sm8450-mainline/linux next-new, 2025-01-11, v6.13.0-rc3
+_commit="bf1d29fced6e156dd6090a9b6600a8c44259c114"
+
+source="
+	$_repo-$_commit.tar.gz::https://github.com/sm8450-mainline/$_repo/archive/$_commit/$_repo-$_commit.tar.gz
+	$_config
+	sm8450-xiaomi-cupid.dts
+	0002-fts-single-full-duplex-transfer-for-geni.patch
+	0003-fts-palm-rejection-and-panel-follower.patch
+	0004-pcie-qcom-retry-link-training-with-endpoint-reset.patch
+	0005-ath11k-reset-the-firmware-when-wmi-stops-answering.patch
+	0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
+	0007-pdr-ack-service-up-before-notifying-clients.patch
+	0008-apr-install-the-gpr-callback-before-probing.patch
+"
+builddir="$srcdir/$_repo-$_commit"
+
+prepare() {
+	default_prepare
+
+	# The devicetree is maintained outside the tree: replace the fork's copy.
+	cp "$srcdir"/sm8450-xiaomi-cupid.dts \
+		arch/arm64/boot/dts/qcom/sm8450-xiaomi-cupid.dts
+
+	cp "$srcdir/$_config" .config
+	make ARCH="$_carch" CC="${CC:-gcc}" olddefconfig
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" CC="${CC:-gcc}" \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-$_flavor"
+}
+
+package() {
+	mkdir -p "$pkgdir"/boot
+	make zinstall modules_install dtbs_install \
+		ARCH="$_carch" \
+		INSTALL_PATH="$pkgdir"/boot/ \
+		INSTALL_MOD_PATH="$pkgdir"/usr \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
+	rm -f "$pkgdir"/usr/lib/modules/*/build "$pkgdir"/usr/lib/modules/*/source
+
+	install -D "$builddir"/include/config/kernel.release \
+		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+}
+
+sha512sums="
+75fbb81e0d2b1a0a6df41a6f6d0cf923074ebd1288354fa22647648bdfcd93413efaea55dd05d07132b5ef0cca62d5f137d7454d5455ef7044ac81d8b04ff385  linux-bf1d29fced6e156dd6090a9b6600a8c44259c114.tar.gz
+e1b7191ab37d4e5dc99c83f2ca5d7559932d1b4f5fcfbc18401ccc5243d491d22aabbbb6b7f41e1d2df98db7d65a8af76e6cb16c316f18cf191a310dd5d97d7e  config-postmarketos-qcom-sm8450-cupid.aarch64
+0fbade34edddde5860a55554e3b79a3a69e4ee3d5dafd2cd48371839f65c5bdd838531067061459deebe6d62913dac15919baa0aa04064e35a3973841b296a26  sm8450-xiaomi-cupid.dts
+e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c38412cf36e93c4cb20d257969f3b3ac5bb89b262d746503f1d7a  0002-fts-single-full-duplex-transfer-for-geni.patch
+6d20f8cf621cb38bfc00bdd041d5baa191320b8ab8dfa82ec0a3e9a7749d373f903f4ec1a91da72aa7cbb83407c0cc8aa2648590ea3a067df16699e3a4a53033  0003-fts-palm-rejection-and-panel-follower.patch
+3d4fa260d50072d20a946efec552f9f63f88f83040d17b44d6bb2daf05b933de05e6a4df583487e18848454e47cfcd57130b16faf86752b2dde5dee43212d1ff  0004-pcie-qcom-retry-link-training-with-endpoint-reset.patch
+64157727f53b104693af1cd7bbcefa15b1db8866e6c9133e0c54da990097fcdeae614d2652539cbb9bce9591a24855c945491bf58a1f8f9ec9c214718ceee901  0005-ath11k-reset-the-firmware-when-wmi-stops-answering.patch
+34280f458d0627be7187e4727f207ebeef125e26cdd1ac5c282fd326ae0c5269831b06c5784748ea746930a8170b57e55ffb0a8fe45f08d370b32ce2b7830cb4  0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
+c37614a0c561893f929594558aadd590d12ffaeaa6b8d9afef7a546a36a30c08b0bd94a19e5fa4208b2b1f24ed95a62d66374f62a49af014b69e82ba4ce27cf8  0007-pdr-ack-service-up-before-notifying-clients.patch
+bd27da92de7f0e161134a0c0a18cf57d9e6a74ed8c599006b79e864d405c02b8da62bb02aea6a10c79838f6132d09580f2c2a5e89e5de4dbf6303c1abd655744  0008-apr-install-the-gpr-callback-before-probing.patch
+"

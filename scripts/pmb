@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run pmbootstrap with the cupid config: scripts/pmb <pmbootstrap args>
+. "$(dirname "$0")/env.sh"
+exec pmbootstrap -c "$CFG" "$@"
