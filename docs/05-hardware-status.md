@@ -29,7 +29,7 @@ table after the first flash.
 | Modem | broken | untested | firmware, `rmtfs_mem`, `soc-qcom-modem` in place; data only if it works, no VoLTE |
 | FDE | broken | should work | `fts_touch_spi` and `st_fts_l3.ftb` are in the initramfs, so unl0kr gets touch input; untested |
 | USB OTG | broken | untested | `dr_mode = "otg"`, USB 2.0 only |
-| Sensors | broken | no | need the SLPI and a userspace sensor stack (hexagonrpc/libssc), not set up |
+| Sensors | broken | no | kernel side is ready (SLPI remoteproc with firmware, `fastrpc` sdsp node, `CONFIG_QCOM_FASTRPC`); userspace (hexagonrpcd, libssc, iio-sensor-proxy) still needs the SDSP libraries from the `dsp` partition, which no public repository has. `scripts/dump-stock.sh` on a rooted stock install now saves them |
 | Haptics | broken | should work | new AW8697 driver (patch 0010), FF_RUMBLE input `aw8697-haptics`, waveform RAM from `firmware-xiaomi-cupid-haptics`, feedbackd udev rule; test with `fftest` |
 | Fingerprint | | no | Goodix, no mainline driver |
 

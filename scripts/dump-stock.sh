@@ -38,6 +38,16 @@ if adb shell su -c id >/dev/null 2>&1; then
 		adb shell su -c "cat /vendor/firmware/$f" > "$out/$f" 2>/dev/null && echo "    $f" || rm -f "$out/$f"
 	done
 	adb shell su -c "cat /persist/qca6490/wlan_mac.bin" > "$out/wlan_mac.bin" 2>/dev/null || rm -f "$out/wlan_mac.bin"
+
+	# Sensor stack (SLPI): the DSP-side libraries from the dsp partition and
+	# the sensor registry/calibration are not in any public blob repository.
+	# Needed to set up hexagonrpcd + libssc later; see docs/05-hardware-status.md.
+	echo "==> sensor stack (dsp libraries, sensor registry)"
+	for d in /vendor/dsp/sdsp /vendor/etc/sensors /mnt/vendor/persist/sensors; do
+		name="$(echo "$d" | tr / _ | sed 's/^_//')"
+		adb shell su -c "tar -C / -cf - ${d#/}" > "$out/$name.tar" 2>/dev/null &&
+			[ -s "$out/$name.tar" ] && echo "    $d" || rm -f "$out/$name.tar"
+	done
 else
 	echo "    no root, skipped"
 fi
