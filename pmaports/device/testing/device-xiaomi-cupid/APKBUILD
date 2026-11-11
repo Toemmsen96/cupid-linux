@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -13,6 +13,7 @@ depends="
 	firmware-xiaomi-cupid-adsp
 	firmware-xiaomi-cupid-cdsp
 	firmware-xiaomi-cupid-gpu
+	firmware-xiaomi-cupid-haptics
 	firmware-xiaomi-cupid-initramfs
 	firmware-xiaomi-cupid-ipa
 	firmware-xiaomi-cupid-modem
@@ -47,6 +48,7 @@ source="
 	xiaomi,cupid.json
 	50-cupid-gmobile.conf
 	cupid-gmobile.sh
+	72-cupid-feedbackd.rules
 "
 
 build() {
@@ -60,6 +62,10 @@ package() {
 	# from the "st,spi" compatible on this image. Load it explicitly.
 	install -Dm644 "$srcdir"/cupid-modules.conf \
 		"$pkgdir"/etc/modules-load.d/cupid.conf
+
+	# Lets feedbackd (Phosh haptics) use the AW8697 vibration motor.
+	install -Dm644 "$srcdir"/72-cupid-feedbackd.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/72-cupid-feedbackd.rules
 
 	# WiFi power save makes ath11k/WCN6855 time out hardware scans right
 	# after associating. The PCIe ASPM half of the same problem is handled by
@@ -136,7 +142,7 @@ systemd() {
 
 sha512sums="
 c4dc2a484216bf3fce28913f7d94ceb0a229f5c968fb2d3c0c1703692c45fdb21223522aa30d22d6fa7d0631f7da30bd48e08cf73e9b683f4b19042d5753476f  deviceinfo
-9370024d2ddadb08995b73cbf3c2dbc9c7e254ebc5a5758c8e9bee1bfb2696b2966964a02409fcadbfd91b0de377b84f978c953f75b0da6a9a8ba124a18832b9  modules-initfs
+8aa9687e7a0c832967d123fdea4307e75b9368d3893ac66fd8c10ab0649a1e977b6a227e1427200940b25b42c85af627ba379cdb7ad120ad32961328fc2d91a2  modules-initfs
 da071f59a4d0c7ae01b1890141902000673f4502009585f62ff1f178eb5f69237b2c3ce04d9f88cd120e21c6f64e2b3837af682313582002cf9b38e3a59a03f4  cupid-modules.conf
 533195caa6ecf1ba8d23d15f29dee6f794c0532a31746f3ede44b7c070e1381ba9148d044e481cfc0baf3239762942aa1974d8d6be457af2ec11b337d10433dc  wifi-powersave-off.conf
 c824dcc7853b1fde461e429ec2b54a3b94f605c326749d484a8c7a17b08f7bdf93f421f50263ce9f35abcc6c03fab501f3bac2f1361723ee71e04deef67a77e1  Xiaomi-12.conf
@@ -145,4 +151,5 @@ d44b9da15ebe2fb75369abd7b37f987457ef6c25a861a4c8dacde88ce5ee11e4c15d4e1bc2d37f68
 a3a1515987fa3e8ce2c67fdc13ed21a837c0d1d420ad4b51eb23a6fc799b8c3dd4e12d8f8bcf846283ecd898e3a6c9c5cec13def5ef3a97a7ff5d3a00cdf2884  xiaomi,cupid.json
 c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f97d83ba75eab23885582375214dccdc890dcdc5656ae7ea6  50-cupid-gmobile.conf
 1f1600d9cec21206d0c4c0d8d0cde34b5f23121b2276a0c2af1ffa2cd37b4ce6048ff12ca1fd8aca5b121919e5a1aaadfa1fb124d83f286042e8a92c50a1e65c  cupid-gmobile.sh
+7deb1eb6a5a2a401394263c1399fc9d35e035534e7876ff951ea13db172d545e018b3035236a03a2f974bd923971db4eff47b260e5eb32851bbc555af4d97390  72-cupid-feedbackd.rules
 "

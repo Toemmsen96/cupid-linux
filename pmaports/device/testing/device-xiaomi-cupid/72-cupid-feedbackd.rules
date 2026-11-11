@@ -1,0 +1,6 @@
+# AW8697 haptics (kernel patch 0010). feedbackd only drives input devices its
+# udev rules tag as "vibra", and its list does not know this driver yet.
+# Numbered before 73-seat-late.rules so the uaccess tag takes effect.
+ACTION=="remove", GOTO="cupid_feedbackd_end"
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT}=="1", SUBSYSTEMS=="input", ATTRS{name}=="aw8697-haptics", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"
+LABEL="cupid_feedbackd_end"

@@ -40,12 +40,15 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Bluetooth | Controller comes up unconfigured (no `local-bd-address`); `bootmac` from `soc-qcom` assigns an address at boot. | device package depends |
 | Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`, topology symlink to the HDK topology. Headphone path and USB-C audio work on zeus; the internal speakers over tertiary TDM remain an unsolved SoC/firmware problem. | patches 0006, 0007, 0008; devicetree; device package |
 | Battery | `CONFIG_BATTERY_QCOM_BATTMGR` and `pmic-glink` so the ADSP battery manager reports charge level and state. | kernel config |
+| Haptics | New driver for the Awinic AW8697 (no mainline driver existed): FF_RUMBLE input device, waveform RAM loaded from the vendor blob, boot-time resonance calibration, feedbackd udev rule. | patch 0010; devicetree; `firmware-xiaomi-cupid-haptics` |
+| NFC | SN100T described for mainline `nxp-nci-i2c` (same wiring as the Nothing Phone (2)). Untested. | devicetree |
+| FDE | Touch driver and its firmware in the initramfs so unl0kr can take input. | `modules-initfs`, `firmware-xiaomi-cupid-initramfs` |
 | Thermal | 85 C passive cooling maps for all CPU zones (`sm8450.dtsi` has none, so the SoC could only hit its critical trip). | devicetree |
 | A/B slots | `soc-qcom-qbootctl` marks the slot successful; the previous cupid package never built its openrc subpackage, so ABL rolled back after about seven boots. | device package |
 | Phosh | Display scale 2, punch-hole cutout definition for gmobile. | device package `-phosh` |
 | Firmware | Fetched from GitHub instead of git.mainlining.org (which has been returning 502); the modem blob is included in GitHub's archive despite being in LFS. | `firmware-xiaomi-cupid` |
 
-Not addressed: camera (no SM8450 CAMSS on mainline), fingerprint, NFC, FM,
+Not addressed: camera (no SM8450 CAMSS on mainline), fingerprint, FM,
 fast charging (vendor charge pumps; expect USB-PD rates), modem (firmware and
 services are in place, untested), sensors (need the SLPI and a userspace
 sensor stack). Details and the current expectation per component are in

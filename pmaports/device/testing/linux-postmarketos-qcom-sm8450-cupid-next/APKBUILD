@@ -13,7 +13,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-next"
 pkgname=linux-$_flavor
 pkgver=6.17.0_rc1
-pkgrel=0
+pkgrel=1
 pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.17-rc1 base (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -53,6 +53,7 @@ source="
 	0007-pdr-ack-service-up-before-notifying-clients.patch
 	0008-apr-install-the-gpr-callback-before-probing.patch
 	0009-libbpf-const-correct-strstr-strchr-results.patch
+	0010-input-add-awinic-aw8697-haptics-driver.patch
 "
 builddir="$srcdir/$_repo-$_commit"
 
@@ -88,8 +89,8 @@ package() {
 
 sha512sums="
 06f6c49bf7a0866e69d9e41f96cc25698e0ed94c052adaf232e8e96ca5dde2217ffd2f8062b82aa5505de4e2a6d4501e0c82a819ad40ee6f706a15fd1442521b  linux-a19585977c11fa662435b607cb9ff4ac7133092e.tar.gz
-6db0abab7701b696a4e17344ba15718bc101fe4ee99888845a273da3756ca65a0e8b8b14ccd9dd15c8497c00f4848a59041dda1c72e2faca916fb19428e4e473  config-postmarketos-qcom-sm8450-cupid-next.aarch64
-34e156d0dd20c548484eaee4432dea74667fe7163660862b2d3957ee5e58abb944ca7f717ea387d7f88b68ded434c9b9ef45a5400e2e70655f10473c023f366c  sm8450-xiaomi-cupid.dts
+7982e3863e11afad4a3430f69514a1c2564742eee033c2022596fc5aac6ccf2255a3a35011c4a280c30937ec019119c795559a96ff47c2f5266837e1ce32a2c9  config-postmarketos-qcom-sm8450-cupid-next.aarch64
+64a3bf9c7ee1e56bf260e2a56d23a082d7462d61456c5b5657129b3ea8e1a9a45ecd1bb81554064ad200f97aa7875ae8dd35343dd2bbed13ffd62875c48dd6db  sm8450-xiaomi-cupid.dts
 e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c38412cf36e93c4cb20d257969f3b3ac5bb89b262d746503f1d7a  0002-fts-single-full-duplex-transfer-for-geni.patch
 6d20f8cf621cb38bfc00bdd041d5baa191320b8ab8dfa82ec0a3e9a7749d373f903f4ec1a91da72aa7cbb83407c0cc8aa2648590ea3a067df16699e3a4a53033  0003-fts-palm-rejection-and-panel-follower.patch
 3d4fa260d50072d20a946efec552f9f63f88f83040d17b44d6bb2daf05b933de05e6a4df583487e18848454e47cfcd57130b16faf86752b2dde5dee43212d1ff  0004-pcie-qcom-retry-link-training-with-endpoint-reset.patch
@@ -98,4 +99,5 @@ e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c3841
 c37614a0c561893f929594558aadd590d12ffaeaa6b8d9afef7a546a36a30c08b0bd94a19e5fa4208b2b1f24ed95a62d66374f62a49af014b69e82ba4ce27cf8  0007-pdr-ack-service-up-before-notifying-clients.patch
 bd27da92de7f0e161134a0c0a18cf57d9e6a74ed8c599006b79e864d405c02b8da62bb02aea6a10c79838f6132d09580f2c2a5e89e5de4dbf6303c1abd655744  0008-apr-install-the-gpr-callback-before-probing.patch
 c740d274fe9d81bb3f92e53235491de91a99066567dae74b56ed66a04b5461bf6f44a050895b55fc854c844eba0660913d04f58c1e276263b23d520d0d0b3729  0009-libbpf-const-correct-strstr-strchr-results.patch
+ce4d82ea5ae73204498fef36e4ed99b989b5ca93d6cfeb5b79b3b44445d2735aebfa173451a8dc492138c99da3cd3ae4953b069be659c498671b28e2e40ef520  0010-input-add-awinic-aw8697-haptics-driver.patch
 "

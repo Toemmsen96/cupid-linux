@@ -25,12 +25,12 @@ table after the first flash.
 | WiFi | works | works, stabilised | patches 0004/0005, PMU supplies, ASPM off, power save off |
 | Bluetooth | works | works | needs an address: `bootmac` |
 | GPS | untested | untested | modem/GNSS over QMI once the modem runs |
-| NFC | broken | no | NXP NCI on i2c9, nodes commented out in the devicetree |
+| NFC | broken | untested | NXP SN100T on i2c9 at 0x28, now described for `nxp-nci-i2c` with the same GPIOs as the mainline Nothing Phone (2) (SM8475). SN1xx is newer than the chips that driver was written for; check `dmesg \| grep -i nci` and `nfctool -l` (neard) |
 | Modem | broken | untested | firmware, `rmtfs_mem`, `soc-qcom-modem` in place; data only if it works, no VoLTE |
-| FDE | broken | no | touch is not in the initramfs (the driver needs its firmware there too), so unl0kr cannot take input |
+| FDE | broken | should work | `fts_touch_spi` and `st_fts_l3.ftb` are in the initramfs, so unl0kr gets touch input; untested |
 | USB OTG | broken | untested | `dr_mode = "otg"`, USB 2.0 only |
 | Sensors | broken | no | need the SLPI and a userspace sensor stack (hexagonrpc/libssc), not set up |
-| Haptics | broken | no | AW8697 on i2c16, no mainline driver |
+| Haptics | broken | should work | new AW8697 driver (patch 0010), FF_RUMBLE input `aw8697-haptics`, waveform RAM from `firmware-xiaomi-cupid-haptics`, feedbackd udev rule; test with `fftest` |
 | Fingerprint | | no | Goodix, no mainline driver |
 
 ## Kernel patches carried
@@ -47,8 +47,9 @@ From the zeus port, all SM8450-generic:
 | 0007 pdr ack service-up before notifying | avoids the servreg ack deadlock |
 | 0008 apr install GPR callback before probe | q6apm's first reply was dropped; `CMD timeout for [1001021]` gone |
 | 0009 libbpf const-correct strstr/strchr results (ours) | lets `resolve_btfids` build on hosts whose libc has C23 const string prototypes (glibc 2.40+, gcc 15, clang 23); needed for the BTF the pmOS kconfig check requires |
+| 0010 Awinic AW8697 haptics driver (ours) | new `drivers/input/misc/aw8697.c` plus binding, see below |
 
-Dropped on purpose: 0001 (PM8008 interrupt, zeus-only), 0009/0010/0011/0012/
+Dropped on purpose (zeus numbering): 0001 (PM8008 interrupt, zeus-only), 0009/0010/0011/0012/
 0013/0014/0015 (speaker experiments that did not produce sound, and the two
 backports that only apply on top of them), 0016/0017 (GPR debug
 infrastructure).
@@ -64,3 +65,29 @@ infrastructure).
   whole node back (the rebase dropped it).
 - `&sound`: `audio-routing` from sm8450-hdk minus the WSA routes.
 - CPU thermal zones: 85 C passive trips with cpufreq cooling maps.
+- `&i2c9`: NFC node (`nxp,nxp-nci-i2c`, IRQ gpio46, VEN gpio34, download
+  gpio45, clock request gpio35), bus at 1 MHz like downstream.
+- `&i2c16`: AW8697 node (`awinic,aw8697`, reset gpio89 active low, IRQ
+  gpio90).
+
+## AW8697 haptics driver (patch 0010)
+
+Written for this port from Xiaomi's downstream driver (MiCode
+`zeus-s-oss`, `drivers/input/misc/aw8697_haptic`) and the cupid downstream
+devicetree; mainline only has the unrelated AW86927. What it does:
+
+- reset, chip id 0x97, the downstream init sequence and tuning values
+  (boost, PWM, LRA, BEMF), offset calibration;
+- measures the motor resonance (f0, nominally 170 Hz) at probe and trims
+  the drive oscillator to it, as downstream does on every boot. The result
+  is logged: `aw8697 ...: f0 xxx.x Hz (preset 170.0 Hz), trim 0x..`;
+- loads `aw8697_haptic.bin` (11 waveforms) into the chip SRAM after probe;
+- registers a memoryless `FF_RUMBLE` device. A rumble loops waveform 11
+  (what downstream plays for any timed vibration), strength through the
+  digital gain with battery-voltage compensation.
+
+Not ported: the short RAM effects 1-10 as separate FF_PERIODIC effects,
+RTP streaming, trigger inputs, the downstream sysfs knobs. Compile-tested
+on both kernels (W=1, checkpatch clean, binding passes
+`dt_binding_check`); not yet run on hardware. If it misbehaves,
+`modprobe -r aw8697` stops it; `dmesg | grep aw8697` shows the probe.
