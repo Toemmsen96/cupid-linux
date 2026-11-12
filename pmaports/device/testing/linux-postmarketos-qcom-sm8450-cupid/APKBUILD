@@ -17,7 +17,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid"
 pkgname=linux-$_flavor
 pkgver=6.13.0_rc3
-pkgrel=2
+pkgrel=3
 pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.13-rc3 base with bring-up fixes"
 arch="aarch64"
 _carch="arm64"
@@ -63,6 +63,7 @@ source="
 	0011-panel-l3-42-02-0a-keep-brightness-while-off-and-restore-lpm.patch
 	0012-ipa-add-ipa-v5.1-for-sm8450.patch
 	0013-arm64-dts-sm8450-add-ipa-node.patch
+	0014-panel-l3-42-02-0a-120hz-and-selectable-refresh-rate.patch
 "
 builddir="$srcdir/$_repo-$_commit"
 
@@ -113,4 +114,5 @@ c740d274fe9d81bb3f92e53235491de91a99066567dae74b56ed66a04b5461bf6f44a050895b55fc
 9a532f9cee1a72a6cfeda2095c40616fbfaccc8751e0ddc3a37e1aa81f7f48009f24e7986574e583f2398ed40fe23c8ab45a953f1714b8b81bfd213609f01cb5  0011-panel-l3-42-02-0a-keep-brightness-while-off-and-restore-lpm.patch
 b48b6f09a5305eefc241a974260085317f3662d0daed036ea6d9885a4a468c3b948bb81ea9ebb257ad2c17419adcd1da445b5014abb532f545139bee8a808f99  0012-ipa-add-ipa-v5.1-for-sm8450.patch
 fff0128071b9c3c897d1098a941ee27c60fe573c48d2f0855b5f9cff9b69f295c887cb6e54b77c48b7ecf8eca18179e8903f52d478c938b71ac30e2c5c2b5694  0013-arm64-dts-sm8450-add-ipa-node.patch
+a735472b67f1056b0cbbc13b4c6c1aaec98edae7c57a0b0cea344369fa666544210e0c9cbc8cf4237d653cc73cbffee053a4b55fbf3a533dc2cbfe59977f47ae  0014-panel-l3-42-02-0a-120hz-and-selectable-refresh-rate.patch
 "
