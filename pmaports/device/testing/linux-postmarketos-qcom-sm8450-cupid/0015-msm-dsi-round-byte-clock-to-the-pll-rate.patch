@@ -1,0 +1,72 @@
+drm/msm/dsi: round the 6G byte clock to the PLL-achievable rate.
+
+Backport to 6.13 of upstream
+  6cd33b6f4155 "drm/msm/dsi: round 6G byte clock rate to the PLL-achievable value"
+  2028280686f4 "drm/msm/dsi: round the byte clock rate after reparenting to the PHY PLL"
+(combined to their end state: rounding in dsi_link_clk_set_rate_6g(), byte
+intf rate derived from the rounded byte clock).
+
+On cupid the requested byte clock (99475085 Hz at 120 Hz) is not exactly what
+the PHY PLL produces, so every runtime DCS command (backlight writes and other
+panel commands) re-applied the link clock rate and re-locked the PLL live.
+Frames being transferred at that moment arrived corrupted: noise bands and
+shifted/duplicated content, sporadic and mostly on interaction, at 60 Hz
+and 120 Hz.
+
+diff --git a/drivers/gpu/drm/msm/dsi/dsi_host.c b/drivers/gpu/drm/msm/dsi/dsi_host.c
+--- a/drivers/gpu/drm/msm/dsi/dsi_host.c
++++ b/drivers/gpu/drm/msm/dsi/dsi_host.c
+@@ -120,7 +120,7 @@
+ 	struct clk *byte_intf_clk;
+ 
+ 	unsigned long byte_clk_rate;
+-	unsigned long byte_intf_clk_rate;
++	bool byte_intf_clk_div_2;
+ 	unsigned long pixel_clk_rate;
+ 	unsigned long esc_clk_rate;
+ 
+@@ -350,8 +350,20 @@
+ 
+ int dsi_link_clk_set_rate_6g(struct msm_dsi_host *msm_host)
+ {
++	unsigned long byte_intf_clk_rate;
++	long rounded_byte_clk_rate;
+ 	int ret;
+ 
++	rounded_byte_clk_rate = clk_round_rate(msm_host->byte_clk,
++					       msm_host->byte_clk_rate);
++	if (rounded_byte_clk_rate < 0) {
++		pr_err("%s: failed to round byte clock rate, %ld\n",
++		       __func__, rounded_byte_clk_rate);
++		return rounded_byte_clk_rate;
++	}
++
++	msm_host->byte_clk_rate = rounded_byte_clk_rate;
++
+ 	DBG("Set clk rates: pclk=%lu, byteclk=%lu",
+ 	    msm_host->pixel_clk_rate, msm_host->byte_clk_rate);
+ 
+@@ -369,7 +381,11 @@
+ 	}
+ 
+ 	if (msm_host->byte_intf_clk) {
+-		ret = clk_set_rate(msm_host->byte_intf_clk, msm_host->byte_intf_clk_rate);
++		byte_intf_clk_rate = msm_host->byte_clk_rate;
++		if (msm_host->byte_intf_clk_div_2)
++			byte_intf_clk_rate /= 2;
++
++		ret = clk_set_rate(msm_host->byte_intf_clk, byte_intf_clk_rate);
+ 		if (ret) {
+ 			pr_err("%s: Failed to set rate byte intf clk, %d\n",
+ 			       __func__, ret);
+@@ -2370,9 +2386,7 @@
+ 		goto unlock_ret;
+ 	}
+ 
+-	msm_host->byte_intf_clk_rate = msm_host->byte_clk_rate;
+-	if (phy_shared_timings->byte_intf_clk_div_2)
+-		msm_host->byte_intf_clk_rate /= 2;
++	msm_host->byte_intf_clk_div_2 = phy_shared_timings->byte_intf_clk_div_2;
+ 
+ 	msm_dsi_sfpb_config(msm_host, true);
+ 
