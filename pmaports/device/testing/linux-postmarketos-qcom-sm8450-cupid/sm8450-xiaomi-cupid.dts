@@ -791,6 +791,20 @@
 	/* aw8697_haptic @ 5a */
 };
 
+/*
+ * IPA v5.1, the modem's data path (rmnet). Without it ModemManager sees the
+ * QMI modem but "Failed to find a net port". The AP loads the GSI firmware
+ * itself (stock: pas-id 15 "ipa_fws", IPA driver loads it), into the same
+ * 0x8b900000 region the stock devicetree reserves. Needs kernel patches
+ * 0012 (driver) and 0013 (sm8450.dtsi node).
+ */
+&ipa {
+	qcom,gsi-loader = "self";
+	memory-region = <&ipa_fw_mem>;
+	firmware-name = "qcom/sm8450/cupid/ipa_fws.mbn";
+	status = "okay";
+};
+
 &mdss {
 	status = "okay";
 };

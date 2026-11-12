@@ -17,7 +17,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid"
 pkgname=linux-$_flavor
 pkgver=6.13.0_rc3
-pkgrel=0
+pkgrel=1
 pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.13-rc3 base with bring-up fixes"
 arch="aarch64"
 _carch="arm64"
@@ -59,6 +59,10 @@ source="
 	0007-pdr-ack-service-up-before-notifying-clients.patch
 	0008-apr-install-the-gpr-callback-before-probing.patch
 	0009-libbpf-const-correct-strstr-strchr-results.patch
+	0010-battmgr-stop-requesting-properties-the-firmware-never-answers.patch
+	0011-panel-l3-42-02-0a-keep-brightness-while-off-and-restore-lpm.patch
+	0012-ipa-add-ipa-v5.1-for-sm8450.patch
+	0013-arm64-dts-sm8450-add-ipa-node.patch
 "
 builddir="$srcdir/$_repo-$_commit"
 
@@ -95,8 +99,8 @@ package() {
 
 sha512sums="
 75fbb81e0d2b1a0a6df41a6f6d0cf923074ebd1288354fa22647648bdfcd93413efaea55dd05d07132b5ef0cca62d5f137d7454d5455ef7044ac81d8b04ff385  linux-bf1d29fced6e156dd6090a9b6600a8c44259c114.tar.gz
-9e12daf6d18f50828e21be11428187cf2af392b2bf1ce3b83571e1a9de950788ad6ce0ae4fa6317619462beefa9d5d6a625a1f53e4562720f49800f3bec8249e  config-postmarketos-qcom-sm8450-cupid.aarch64
-0fbade34edddde5860a55554e3b79a3a69e4ee3d5dafd2cd48371839f65c5bdd838531067061459deebe6d62913dac15919baa0aa04064e35a3973841b296a26  sm8450-xiaomi-cupid.dts
+c9e652ba1f87d5c5bcdd130b76e5dca4e2cc7e1315bc62d3089dad00f34e6ab754d2d6acb00ba52dee7ee99be3f49507a201907b183597cffbebd5a67e8b63a0  config-postmarketos-qcom-sm8450-cupid.aarch64
+bcfc45d16d2cbde6fd79598b0a0b2300bdf9b6c2d87dda4491a8ed85315f6ef3045676178127a5af030b3848389a43a208271564390b5802343837b3390c8272  sm8450-xiaomi-cupid.dts
 e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c38412cf36e93c4cb20d257969f3b3ac5bb89b262d746503f1d7a  0002-fts-single-full-duplex-transfer-for-geni.patch
 6d20f8cf621cb38bfc00bdd041d5baa191320b8ab8dfa82ec0a3e9a7749d373f903f4ec1a91da72aa7cbb83407c0cc8aa2648590ea3a067df16699e3a4a53033  0003-fts-palm-rejection-and-panel-follower.patch
 3d4fa260d50072d20a946efec552f9f63f88f83040d17b44d6bb2daf05b933de05e6a4df583487e18848454e47cfcd57130b16faf86752b2dde5dee43212d1ff  0004-pcie-qcom-retry-link-training-with-endpoint-reset.patch
@@ -105,4 +109,8 @@ e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c3841
 c37614a0c561893f929594558aadd590d12ffaeaa6b8d9afef7a546a36a30c08b0bd94a19e5fa4208b2b1f24ed95a62d66374f62a49af014b69e82ba4ce27cf8  0007-pdr-ack-service-up-before-notifying-clients.patch
 bd27da92de7f0e161134a0c0a18cf57d9e6a74ed8c599006b79e864d405c02b8da62bb02aea6a10c79838f6132d09580f2c2a5e89e5de4dbf6303c1abd655744  0008-apr-install-the-gpr-callback-before-probing.patch
 c740d274fe9d81bb3f92e53235491de91a99066567dae74b56ed66a04b5461bf6f44a050895b55fc854c844eba0660913d04f58c1e276263b23d520d0d0b3729  0009-libbpf-const-correct-strstr-strchr-results.patch
+1c8d59beb620ba71ec48fea0d6447d6076f88d575c747a1cbb3389ca6d4427727ceb7e4b4bf466f58873e7cd8122f51f88c930a3a8e91bd3effb306ef3092053  0010-battmgr-stop-requesting-properties-the-firmware-never-answers.patch
+9a532f9cee1a72a6cfeda2095c40616fbfaccc8751e0ddc3a37e1aa81f7f48009f24e7986574e583f2398ed40fe23c8ab45a953f1714b8b81bfd213609f01cb5  0011-panel-l3-42-02-0a-keep-brightness-while-off-and-restore-lpm.patch
+d7f789570fb0fe1d4c65e076d599d45e5d95e3043f2cfaf760e2798a84bbf55fff5d6e72686ea2a5c04d49f4a55022685b6eaadd376dd7cb9aaaa09914588fd0  0012-ipa-add-ipa-v5.1-for-sm8450.patch
+fff0128071b9c3c897d1098a941ee27c60fe573c48d2f0855b5f9cff9b69f295c887cb6e54b77c48b7ecf8eca18179e8903f52d478c938b71ac30e2c5c2b5694  0013-arm64-dts-sm8450-add-ipa-node.patch
 "
