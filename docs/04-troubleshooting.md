@@ -29,6 +29,11 @@ Serial console is the only early-boot channel: UART pads are on the board
 
 Not necessarily a failure. Wait a minute, then `ssh <user>@172.16.42.1`.
 
+- First check the obvious: the greeter starts with the panel blanked. Press
+  the power button once (seen on the first cupid boot). The first login after
+  that can scroll console text for up to a minute before phosh appears.
+- SSH refuses with "REMOTE HOST IDENTIFICATION HAS CHANGED": another pmOS
+  device used 172.16.42.1 before. `ssh-keygen -R 172.16.42.1`.
 - SSH works: check `dmesg | grep -iE 'panel|dsi|msm'`. The panel driver is
   the module `panel-l3-42-02-0a-dsc`; `/sys/class/drm/card*-DSI-1/status`
   should read `connected`. A dark panel with the system up is usually a rail
