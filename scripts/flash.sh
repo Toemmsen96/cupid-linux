@@ -46,6 +46,10 @@ for f in "$boot" "$rootfs" "$vbmeta"; do
 	[ -e "$f" ] || die "$f missing, run scripts/build.sh first"
 done
 
+if pgrep -f 'pmbootstrap .*(install|export|build)' >/dev/null 2>&1; then
+	die "pmbootstrap is still running; wait for scripts/build.sh to finish"
+fi
+
 dev="$(fastboot devices | awk 'NF {print $1; exit}')"
 [ -n "$dev" ] || die "no device in fastboot. Power off, then hold Volume-Down + Power."
 
