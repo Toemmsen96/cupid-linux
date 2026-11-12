@@ -13,7 +13,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-next"
 pkgname=linux-$_flavor
 pkgver=6.17.0_rc1
-pkgrel=0
+pkgrel=1
 pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.17-rc1 base (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -88,7 +88,7 @@ package() {
 
 sha512sums="
 06f6c49bf7a0866e69d9e41f96cc25698e0ed94c052adaf232e8e96ca5dde2217ffd2f8062b82aa5505de4e2a6d4501e0c82a819ad40ee6f706a15fd1442521b  linux-a19585977c11fa662435b607cb9ff4ac7133092e.tar.gz
-6db0abab7701b696a4e17344ba15718bc101fe4ee99888845a273da3756ca65a0e8b8b14ccd9dd15c8497c00f4848a59041dda1c72e2faca916fb19428e4e473  config-postmarketos-qcom-sm8450-cupid-next.aarch64
+de9f0e6690d6b9bb022e462e66223d26110e66730652c6beebe4491367b3b5a182a8cdb5eab6249cf1201235830379108cb9bcf967971f273163cb874632c356  config-postmarketos-qcom-sm8450-cupid-next.aarch64
 34e156d0dd20c548484eaee4432dea74667fe7163660862b2d3957ee5e58abb944ca7f717ea387d7f88b68ded434c9b9ef45a5400e2e70655f10473c023f366c  sm8450-xiaomi-cupid.dts
 e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c38412cf36e93c4cb20d257969f3b3ac5bb89b262d746503f1d7a  0002-fts-single-full-duplex-transfer-for-geni.patch
 6d20f8cf621cb38bfc00bdd041d5baa191320b8ab8dfa82ec0a3e9a7749d373f903f4ec1a91da72aa7cbb83407c0cc8aa2648590ea3a067df16699e3a4a53033  0003-fts-palm-rejection-and-panel-follower.patch

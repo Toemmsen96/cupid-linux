@@ -1,0 +1,51 @@
+diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -307,6 +307,15 @@
+ 	struct work_struct enable_work;
+ 
+ 	/*
++	 * Consecutive request timeouts per battery property. Some firmware
++	 * (Xiaomi 12 / SM8450) never answers BATT_MODEL_NAME and BATT_TTF_AVG;
++	 * every read then blocks for a second and logs an error, and upower
++	 * polls them continuously. After BATTMGR_MAX_TIMEOUTS in a row the
++	 * property is reported as unavailable without asking the firmware.
++	 */
++	u8 bat_timeouts[32];
++
++	/*
+ 	 * @lock is used to prevent concurrent power supply requests to the
+ 	 * firmware, as it then stops responding.
+ 	 */
+@@ -420,6 +429,8 @@
+ 	[POWER_SUPPLY_PROP_POWER_NOW] = BATT_POWER_NOW,
+ };
+ 
++#define BATTMGR_MAX_TIMEOUTS	3
++
+ static int qcom_battmgr_bat_sm8350_update(struct qcom_battmgr *battmgr,
+ 					  enum power_supply_property psp)
+ {
+@@ -431,8 +442,22 @@
+ 
+ 	prop = sm8350_bat_prop_map[psp];
+ 
++	if (prop < ARRAY_SIZE(battmgr->bat_timeouts) &&
++	    battmgr->bat_timeouts[prop] >= BATTMGR_MAX_TIMEOUTS)
++		return -ENODATA;
++
+ 	mutex_lock(&battmgr->lock);
+ 	ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET, prop, 0);
++	if (prop < ARRAY_SIZE(battmgr->bat_timeouts)) {
++		if (ret == -ETIMEDOUT) {
++			if (++battmgr->bat_timeouts[prop] == BATTMGR_MAX_TIMEOUTS)
++				dev_info(battmgr->dev,
++					 "battery property %u never answered, no longer requested\n",
++					 prop);
++		} else {
++			battmgr->bat_timeouts[prop] = 0;
++		}
++	}
+ 	mutex_unlock(&battmgr->lock);
+ 
+ 	return ret;
