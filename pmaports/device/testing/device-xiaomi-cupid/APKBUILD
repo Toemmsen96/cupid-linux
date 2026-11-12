@@ -44,7 +44,7 @@ source="
 	Xiaomi-12.conf
 	HiFi.conf
 	phoc.ini
-	xiaomi,cupid.json
+	xiaomi-cupid.json
 	50-cupid-gmobile.conf
 	cupid-gmobile.sh
 "
@@ -111,7 +111,9 @@ phosh() {
 	# compiled-in GResource and upstream has no entry for cupid, so phosh
 	# never learns this panel has a punch-hole. G_RESOURCE_OVERLAYS points
 	# that one resource at the file below; no rebuild of gmobile needed.
-	install -Dm644 "$srcdir"/xiaomi,cupid.json \
+	# abuild rejects "," in source names, so the source is xiaomi-cupid.json;
+	# the installed name keeps gmobile's compatible-string naming.
+	install -Dm644 "$srcdir"/xiaomi-cupid.json \
 		"$subpkgdir"/usr/share/gmobile/devices/display-panels/xiaomi,cupid.json
 	# systemd user sessions read environment.d, PAM/login shells read
 	# profile.d. Ship both so either init system gets the overlay.
@@ -142,7 +144,7 @@ da071f59a4d0c7ae01b1890141902000673f4502009585f62ff1f178eb5f69237b2c3ce04d9f88cd
 c824dcc7853b1fde461e429ec2b54a3b94f605c326749d484a8c7a17b08f7bdf93f421f50263ce9f35abcc6c03fab501f3bac2f1361723ee71e04deef67a77e1  Xiaomi-12.conf
 7615196803c68dd5c5a9b561abfa6b0ed21ed76986653d9f237654451eb32f7f7b1bc867bd8a9b585e8c85753ff47f69f8cd48c881eab6a023bc32b0b5c41a5e  HiFi.conf
 d44b9da15ebe2fb75369abd7b37f987457ef6c25a861a4c8dacde88ce5ee11e4c15d4e1bc2d37f68a30ae0d51b84e0e3e02166b07b38f78a111f8b80534a907d  phoc.ini
-a3a1515987fa3e8ce2c67fdc13ed21a837c0d1d420ad4b51eb23a6fc799b8c3dd4e12d8f8bcf846283ecd898e3a6c9c5cec13def5ef3a97a7ff5d3a00cdf2884  xiaomi,cupid.json
+a3a1515987fa3e8ce2c67fdc13ed21a837c0d1d420ad4b51eb23a6fc799b8c3dd4e12d8f8bcf846283ecd898e3a6c9c5cec13def5ef3a97a7ff5d3a00cdf2884  xiaomi-cupid.json
 c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f97d83ba75eab23885582375214dccdc890dcdc5656ae7ea6  50-cupid-gmobile.conf
 1f1600d9cec21206d0c4c0d8d0cde34b5f23121b2276a0c2af1ffa2cd37b4ce6048ff12ca1fd8aca5b121919e5a1aaadfa1fb124d83f286042e8a92c50a1e65c  cupid-gmobile.sh
 "
