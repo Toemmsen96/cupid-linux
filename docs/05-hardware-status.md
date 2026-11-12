@@ -27,7 +27,7 @@ fix that is in this repository but not yet booted.
 | Bluetooth | works | works | controller up | needs an address: `bootmac` |
 | GPS | untested | untested | | modem/GNSS over QMI once the modem runs |
 | NFC | broken | no | | NXP NCI on i2c9, nodes commented out in the devicetree |
-| Modem | broken | untested | up, no data | remoteproc up, QMI works, SIM selected. No data: SM8450 has IPA v5.1, which mainline lacks, so ModemManager "Failed to find a net port". Patches 0012/0013 backport the pending upstream support; pkgrel 1 failed to probe ("SMEM item 0", 6.13 still needs `smem_id` in the data), fixed in pkgrel 2 (pending). No VoLTE |
+| Modem | broken | untested | registers, no data yet | pkgrel 3: IPA v5.1 probes, `rmnet_ipa0` appears, ModemManager registers on LTE/5G NR (Sunrise), IMS bearer and an `internet` bearer get addresses. Uplink packets reach IPA and GSI interrupts fire, but nothing comes back (rx 0). IPA's first runtime suspend hangs in `gsi_channel_suspend` (kworker in D state, TX queue stuck, reboot hangs); the device package keeps IPA powered via udev until that is fixed. No VoLTE |
 | FDE | broken | no | | touch is not in the initramfs (the driver needs its firmware there too), so unl0kr cannot take input |
 | USB OTG | broken | untested | | `dr_mode = "otg"`, USB 2.0 only |
 | Sensors | broken | no | | need the SLPI and a userspace sensor stack (hexagonrpc/libssc), not set up |

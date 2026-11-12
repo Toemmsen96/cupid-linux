@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -47,6 +47,7 @@ source="
 	xiaomi-cupid.json
 	50-cupid-gmobile.conf
 	cupid-gmobile.sh
+	90-cupid-ipa-no-runtime-pm.rules
 "
 
 build() {
@@ -66,6 +67,10 @@ package() {
 	# pcie_aspm.policy=performance on the kernel cmdline (deviceinfo).
 	install -Dm644 "$srcdir"/wifi-powersave-off.conf \
 		"$pkgdir"/etc/NetworkManager/conf.d/wifi-powersave-off.conf
+
+	# IPA runtime suspend hangs on this kernel; keep it powered (see file).
+	install -Dm644 "$srcdir"/90-cupid-ipa-no-runtime-pm.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/90-cupid-ipa-no-runtime-pm.rules
 
 	# ALSA use case manager profile. Without one matching this card the
 	# sound server cannot configure it and falls back to a dummy output.
@@ -147,4 +152,5 @@ d44b9da15ebe2fb75369abd7b37f987457ef6c25a861a4c8dacde88ce5ee11e4c15d4e1bc2d37f68
 a3a1515987fa3e8ce2c67fdc13ed21a837c0d1d420ad4b51eb23a6fc799b8c3dd4e12d8f8bcf846283ecd898e3a6c9c5cec13def5ef3a97a7ff5d3a00cdf2884  xiaomi-cupid.json
 c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f97d83ba75eab23885582375214dccdc890dcdc5656ae7ea6  50-cupid-gmobile.conf
 1f1600d9cec21206d0c4c0d8d0cde34b5f23121b2276a0c2af1ffa2cd37b4ce6048ff12ca1fd8aca5b121919e5a1aaadfa1fb124d83f286042e8a92c50a1e65c  cupid-gmobile.sh
+77fc0e57f4600fb96ab0e5e5931e4edcc13cb411567b9cd60a975ee7f78454dd6bbaabf3d92bf0cd87247269f71b94b5f1e129e431d372d31c374802756c5444  90-cupid-ipa-no-runtime-pm.rules
 "
