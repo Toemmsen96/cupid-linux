@@ -58,6 +58,49 @@ echo "==> exporting to $OUT"
 mkdir -p "$OUT"
 pmb export "$OUT"
 
+# The image must be a cleanly unmounted filesystem. A process that creates a
+# new mount namespace while pmbootstrap has the image mounted (a Steam game's
+# pressure-vessel sandbox, flatpak, podman, ...) copies that mount; the
+# umount then only detaches it on the host, ext4 never checkpoints its
+# journal, and img2simg exports a filesystem that is mostly empty until the
+# journal is replayed. It boots into the initramfs debug shell with half the
+# top-level directories missing. Seen on 2026-11-12.
+check_image() {
+	img="$(readlink -f "$OUT/xiaomi-cupid.img")"
+	command -v simg2img >/dev/null 2>&1 && command -v debugfs >/dev/null 2>&1 &&
+		command -v e2fsck >/dev/null 2>&1 && command -v dumpe2fs >/dev/null 2>&1 || {
+		echo "warning: simg2img/debugfs missing (android-tools, e2fsprogs), image not checked" >&2
+		return 0
+	}
+	raw="$(mktemp "${TMPDIR:-/tmp}/cupid-rootfs.XXXXXX")"
+	trap 'rm -f "$raw"' EXIT
+	if file -b "$img" | grep -q 'Android sparse'; then
+		simg2img "$img" "$raw"
+	else
+		cp --sparse=always "$img" "$raw"
+	fi
+	bad=""
+	dumpe2fs -h "$raw" 2>/dev/null | grep '^Filesystem features:' | grep -q needs_recovery &&
+		bad="$bad journal-not-checkpointed"
+	e2fsck -fn "$raw" >/dev/null 2>&1 || bad="$bad fsck-errors"
+	for p in /sbin /lib /home /usr/lib/systemd/systemd /etc/fstab; do
+		out="$(debugfs -c -R "stat $p" "$raw" 2>&1)"
+		echo "$out" | grep -qE 'File not found|not open|while (opening|reading)' &&
+			bad="$bad missing:$p"
+	done
+	rm -f "$raw"
+	if [ -n "$bad" ]; then
+		echo "error: the exported image is incomplete:$bad" >&2
+		echo "Something kept the image mounted in another mount namespace while" >&2
+		echo "pmbootstrap built it (Steam game, flatpak, podman/toolbox...). Close" >&2
+		echo "it and run: scripts/build.sh image   (do not flash this image)" >&2
+		exit 1
+	fi
+	echo "    image check ok (clean ext4, root filesystem complete)"
+}
+echo "==> checking the image"
+check_image
+
 echo "==> vbmeta with verification disabled"
 # flags 3 = HASHTREE_DISABLED | VERIFICATION_DISABLED, flashed to both slots
 # by scripts/flash.sh.
