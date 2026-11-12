@@ -47,6 +47,16 @@ Not necessarily a failure. Wait a minute, then `ssh <user>@172.16.42.1`.
   Check `blkid` there: `userdata` must show `LABEL="pmOS_root"`.
 - Nothing on USB: the kernel did not get as far as the initramfs. See above.
 
+## Screen flickers, or a different refresh rate
+
+The panel runs at 120 Hz by default (patch 0014). 60 Hz flickers visibly
+(OLED PWM dimming); 90 Hz is in between. To change it, add
+`panel_l3_42_02_0a_dsc.refresh_rate=60` (or `90`) to
+`deviceinfo_kernel_cmdline` and rebuild, or for a quick test boot with it via
+`fastboot boot`. `cat /sys/module/panel_l3_42_02_0a_dsc/parameters/refresh_rate`
+shows the active value; `vrefresh` in
+`/sys/kernel/debug/dri/0/state` (root) must match it.
+
 ## Touch does not work
 
 `dmesg | grep -i fts`:
