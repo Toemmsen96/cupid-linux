@@ -9,7 +9,10 @@ Kompanets), not merged yet:
     sm8450-oneplus-negroni, sm8475-motorola-bronco, sm7475-realme-senna)
 Data derived from LineageOS android_kernel_qcom_sm8450-modules.
 Adapted: 6.13 has no IPA v5.2 ("milos"), so the v5.1 entries are added next
-to v5.0 instead of before v5.2. ipa_data-v5.1.c is unchanged.
+to v5.0 instead of before v5.2. 6.13 still reads the SMEM item from the data
+(upstream hard-codes it since), so ipa_data-v5.1.c gets .smem_id = 497 like
+v5.0/v5.5; without it the probe fails: "error -22 allocating size 36864 SMEM
+item 0".
 
 diff --git a/drivers/net/ipa/Makefile b/drivers/net/ipa/Makefile
 index d3abb38..c603839 100644
@@ -26,10 +29,10 @@ index d3abb38..c603839 100644
  
 diff --git a/drivers/net/ipa/data/ipa_data-v5.1.c b/drivers/net/ipa/data/ipa_data-v5.1.c
 new file mode 100644
-index 0000000..7d7bc19
+index 0000000..f44ba1c
 --- /dev/null
 +++ b/drivers/net/ipa/data/ipa_data-v5.1.c
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,477 @@
 +// SPDX-License-Identifier: GPL-2.0
 +
 +/* Copyright (C) 2023-2024 Linaro Ltd. */
@@ -469,6 +472,7 @@ index 0000000..7d7bc19
 +	.local		= ipa_mem_local_data,
 +	.imem_addr	= 0x146a8000,
 +	.imem_size	= 0x00002000,
++	.smem_id	= 497,
 +	.smem_size	= 0x00009000,
 +};
 +

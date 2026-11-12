@@ -14,7 +14,7 @@ fix that is in this repository but not yet booted.
 | Flashing | works | works | works | fastboot, see [03-install.md](03-install.md); fastboot 37 needs the vbmeta fix in `flash.sh` |
 | USB networking | works | works | works | 172.16.42.1, SSH with the pmbootstrap key |
 | Internal storage | works | works | works | UFS |
-| Battery | broken | should work | works | capacity, status, voltage. The firmware never answers `model_name`/`time_to_full_avg`; each read blocked 1 s and logged `-110` (~70/min). Patch 0010 stops asking (pending) |
+| Battery | broken | should work | works | capacity, status, voltage. The firmware never answers `model_name`/`time_to_full_avg`; each read blocked 1 s and logged `-110` (~70/min). Patch 0010 stops asking: verified on pkgrel 1, 6 timeouts then silence |
 | Charging | broken | USB-PD rates only | the 120 W charge pumps are vendor-specific |
 | Screen | broken | should work | works, flickers | panel `l3_42_02_0a` (matches the bootloader's `msm_drm.dsi_display0`). Starts blanked: press power. Brightness writes while blanked failed and left DSI in HS mode; patch 0011 (pending), which may also be the flicker |
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
@@ -27,13 +27,13 @@ fix that is in this repository but not yet booted.
 | Bluetooth | works | works | controller up | needs an address: `bootmac` |
 | GPS | untested | untested | | modem/GNSS over QMI once the modem runs |
 | NFC | broken | no | | NXP NCI on i2c9, nodes commented out in the devicetree |
-| Modem | broken | untested | up, no data | remoteproc up, QMI works, SIM selected. No data: SM8450 has IPA v5.1, which mainline lacks, so ModemManager "Failed to find a net port". Patches 0012/0013 backport the pending upstream support (pending). No VoLTE |
+| Modem | broken | untested | up, no data | remoteproc up, QMI works, SIM selected. No data: SM8450 has IPA v5.1, which mainline lacks, so ModemManager "Failed to find a net port". Patches 0012/0013 backport the pending upstream support; pkgrel 1 failed to probe ("SMEM item 0", 6.13 still needs `smem_id` in the data), fixed in pkgrel 2 (pending). No VoLTE |
 | FDE | broken | no | | touch is not in the initramfs (the driver needs its firmware there too), so unl0kr cannot take input |
 | USB OTG | broken | untested | | `dr_mode = "otg"`, USB 2.0 only |
 | Sensors | broken | no | | need the SLPI and a userspace sensor stack (hexagonrpc/libssc), not set up |
 | Haptics | broken | no | | AW8697 on i2c16, no mainline driver |
 | Fingerprint | | no | |
-| zram swap | | | failed | kernel had only the LZO backend, pmOS asks for zstd; zstd/lz4 backends enabled (pending) | Goodix, no mainline driver |
+| zram swap | | | works | kernel had only the LZO backend, pmOS asks for zstd; zstd/lz4 backends enabled, verified on pkgrel 1 | Goodix, no mainline driver |
 
 ## Kernel patches carried
 
