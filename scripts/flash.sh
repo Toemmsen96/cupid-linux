@@ -93,8 +93,11 @@ fi
 
 if [ "$mode" = all ]; then
 	echo "==> vbmeta (both slots)"
-	fastboot --disable-verity --disable-verification flash vbmeta_a "$vbmeta"
-	fastboot --disable-verity --disable-verification flash vbmeta_b "$vbmeta"
+	# The image is built with flags 3 (verity + verification disabled) by
+	# build.sh, so no --disable-verity/--disable-verification here: fastboot
+	# 37 fails on that header-only image with "Failed to find AVB_MAGIC".
+	fastboot flash vbmeta_a "$vbmeta"
+	fastboot flash vbmeta_b "$vbmeta"
 	echo "==> erasing dtbo and vendor_boot (both slots)"
 	for p in dtbo_a dtbo_b vendor_boot_a vendor_boot_b; do
 		fastboot erase "$p" || echo "warning: erase $p failed (missing partition?)"
