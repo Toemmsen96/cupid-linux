@@ -16,7 +16,7 @@ fix that is in this repository but not yet booted.
 | Internal storage | works | works | works | UFS |
 | Battery | broken | should work | works | capacity, status, voltage. The firmware never answers `model_name`/`time_to_full_avg`; each read blocked 1 s and logged `-110` (~70/min). Patch 0010 stops asking: verified on pkgrel 1, 6 timeouts then silence |
 | Charging | broken | USB-PD rates only | the 120 W charge pumps are vendor-specific |
-| Screen | broken | should work | works, flickers at 60 Hz | panel `l3_42_02_0a` (matches the bootloader's `msm_drm.dsi_display0`). Starts blanked: press power. Brightness writes while blanked failed and left DSI in HS mode: patch 0011, verified on pkgrel 1. The flicker remained (also on a static screen, with no frames sent, and with UBWC off): the driver ran the panel at 60 Hz, where the OLED's PWM dimming is visible; stock runs 120 Hz. Patch 0014 defaults to 120 Hz (pending) |
+| Screen | broken | should work | works, glitches | panel `l3_42_02_0a` (matches the bootloader's `msm_drm.dsi_display0`). Starts blanked: press power. 60 Hz flickered (OLED PWM): 0014 runs it at 120 Hz like stock, verified. Sporadic corruption on interaction (noise bands, shifted/duplicated content) at 60 and 120 Hz while phosh's own screenshot is clean: the DSI byte clock is not PLL-exact, so each runtime DCS command re-locked the PLL mid-transfer; 0015 backports the upstream rounding fix (pending) |
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
 | Audio | broken | partial | card probes | headphone/codec-DMA path and USB-C audio; internal speakers (CS35L41 on tertiary TDM) do not work: the DSP never propagates a media format to the TDM sink, an audioreach gap |
@@ -53,6 +53,7 @@ From the zeus port, all SM8450-generic:
 | 0011 panel l3-42-02-0a brightness (ours) | keep the level while the panel is off and apply it on enable; always restore `MIPI_DSI_MODE_LPM`; drop the DCS read-back that always failed |
 | 0012 IPA v5.1 (backport) | Esteban Urrutia's pending "SM8450 IPA support" v2 2/3 plus its `IPA_MEM_MODEM_STATS_DROP` dependency, rebased onto 6.13 (no IPA v5.2 there) |
 | 0014 panel l3-42-02-0a refresh rate (ours) | `refresh_rate` module parameter, 60/90/120 Hz (default 120) with the stock per-rate commands (DCS 0x2f 01/03/02 plus the 90/120 Hz extras); the mode clock follows |
+| 0015 msm/dsi byte clock rounding (backport) | upstream 6cd33b6f4155 + 2028280686f4: round the 6G byte clock to the PLL-achievable rate so DCS commands no longer re-lock the PLL |
 | 0013 sm8450 IPA node (backport) | v2 3/3: disabled `ipa` node and IMEM `modem-tables`; cupid enables it with `qcom,gsi-loader = "self"` and `ipa_fws.mbn` |
 
 Dropped on purpose (zeus numbering): 0001 (PM8008 interrupt, zeus-only),
