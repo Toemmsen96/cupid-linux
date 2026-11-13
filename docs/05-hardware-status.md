@@ -26,13 +26,13 @@ fix that is in this repository but not yet booted.
 | WiFi | works | works, stabilised | works | patches 0004/0005, PMU supplies, ASPM off, power save off |
 | Bluetooth | works | works | controller up | needs an address: `bootmac` |
 | GPS | untested | untested | | modem/GNSS over QMI once the modem runs |
-| NFC | broken | no | | NXP NCI on i2c9, nodes commented out in the devicetree |
+| NFC | broken | no | pending | NXP SN100T on i2c9 0x28 (stock `qcom,sn-nci`), mainline `nxp-nci-i2c` (NCI 2.0), GPIOs irq 46 / ven 34 / fw 45 / clk-req 35 like the Nothing Phone (2); node enabled at 1 MHz. Userspace: neard (tags); no payments/card emulation |
 | Modem | broken | untested | data works | Verified on pkgrel 6 (2026-11-13): LTE/5G NR on Sunrise, DNS, HTTP, 5 MB download in 6 s, no drops; IPA runtime suspend/resume works. The cause was 6.13's v5.0 GSI register table (`ERINDEX` vs `CH_ERINDEX`, every channel bound to event ring 0), fixed by upstream 56007972c0b1 in patch 0016 together with four related fixes; IPA v5.1 itself is the pending upstream series (0012/0013). APN must be set by hand (`nmcli connection add type gsm ifname '*' con-name 'Mobile data' apn internet` for Sunrise/yallo). Calls/SMS/VoLTE untested |
 | FDE | broken | no | | touch is not in the initramfs (the driver needs its firmware there too), so unl0kr cannot take input |
 | USB OTG | broken | untested | | `dr_mode = "otg"`, USB 2.0 only |
 | Sensors | broken | no | | need the SLPI and a userspace sensor stack (hexagonrpc/libssc), not set up |
-| Haptics | broken | no | | AW8697 on i2c16, no mainline driver |
-| Fingerprint | | no | |
+| Haptics | broken | no | pending | Awinic AW8697 on i2c16 0x5a (reset gpio89, irq gpio90): new driver patch 0019 (FF_RUMBLE, waveform library `aw8697_haptic.bin` from the firmware package, f0 calibration), feedbackd udev rule in the device package |
+| Fingerprint | | no | not feasible | Goodix optical under-display sensor; its SPI bus belongs to TrustZone and capture/matching run in the QSEE app `gfcupid`, no Linux path |
 | zram swap | | | works | kernel had only the LZO backend, pmOS asks for zstd; zstd/lz4 backends enabled, verified on pkgrel 1 | Goodix, no mainline driver |
 
 ## Open issue: sporadic display corruption
@@ -91,6 +91,7 @@ From the zeus port, all SM8450-generic:
 | 0014 panel l3-42-02-0a refresh rate (ours) | `refresh_rate` module parameter, 60/90/120 Hz (default 120) with the stock per-rate commands (DCS 0x2f 01/03/02 plus the 90/120 Hz extras); the mode clock follows |
 | 0015 msm/dsi byte clock rounding (backport) | upstream 6cd33b6f4155 + 2028280686f4: round the 6G byte clock to the PLL-achievable rate so DCS commands no longer re-lock the PLL (not the cause of the screen glitches, see above) |
 | 0018 panel l3-42-02-0a (ours) | stock timing-switch tails for 60/120 Hz (60 Hz ran at ~29 Hz without) |
+| 0019 Awinic AW8697 haptics driver (ours) | written from Xiaomi's downstream driver: RAM waveform library, f0 calibration, battery-voltage gain compensation, FF_RUMBLE input device |
 | 0016 IPA v5.x GSI fixes (backport) | upstream 56007972c0b1 (event ring index never programmed on v5.0+), 9709b56d908a, 1335b903cf2e, de08f9585692, 3cbfd627ee72 |
 | 0013 sm8450 IPA node (backport) | v2 3/3: disabled `ipa` node and IMEM `modem-tables`; cupid enables it with `qcom,gsi-loader = "self"` and `ipa_fws.mbn` |
 

@@ -17,7 +17,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid"
 pkgname=linux-$_flavor
 pkgver=6.13.0_rc3
-pkgrel=7
+pkgrel=8
 pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.13-rc3 base with bring-up fixes"
 arch="aarch64"
 _carch="arm64"
@@ -67,6 +67,7 @@ source="
 	0015-msm-dsi-round-byte-clock-to-the-pll-rate.patch
 	0016-ipa-backport-v5.x-gsi-fixes.patch
 	0018-panel-l3-42-02-0a-stock-timing-switch-tails.patch
+	0019-input-add-awinic-aw8697-haptics-driver.patch
 "
 builddir="$srcdir/$_repo-$_commit"
 
@@ -103,8 +104,8 @@ package() {
 
 sha512sums="
 75fbb81e0d2b1a0a6df41a6f6d0cf923074ebd1288354fa22647648bdfcd93413efaea55dd05d07132b5ef0cca62d5f137d7454d5455ef7044ac81d8b04ff385  linux-bf1d29fced6e156dd6090a9b6600a8c44259c114.tar.gz
-c9e652ba1f87d5c5bcdd130b76e5dca4e2cc7e1315bc62d3089dad00f34e6ab754d2d6acb00ba52dee7ee99be3f49507a201907b183597cffbebd5a67e8b63a0  config-postmarketos-qcom-sm8450-cupid.aarch64
-bcfc45d16d2cbde6fd79598b0a0b2300bdf9b6c2d87dda4491a8ed85315f6ef3045676178127a5af030b3848389a43a208271564390b5802343837b3390c8272  sm8450-xiaomi-cupid.dts
+19bebe55f085fde109a74c334950fa9fe4fe1c25358627b75d9016b765beaedaf54c4a1485d5c22ebf836f738a14737c411ba1d26c9843c356fa4e66dd9b4a70  config-postmarketos-qcom-sm8450-cupid.aarch64
+1bb7ff72c5e6fcc8a15488ba47e828c2d701db0dd309d0e83b7d1425bd84effffa2da634b21539fa654391e3dec2366b385cf82f64ef094ed26496426cfb07fa  sm8450-xiaomi-cupid.dts
 e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c38412cf36e93c4cb20d257969f3b3ac5bb89b262d746503f1d7a  0002-fts-single-full-duplex-transfer-for-geni.patch
 6d20f8cf621cb38bfc00bdd041d5baa191320b8ab8dfa82ec0a3e9a7749d373f903f4ec1a91da72aa7cbb83407c0cc8aa2648590ea3a067df16699e3a4a53033  0003-fts-palm-rejection-and-panel-follower.patch
 3d4fa260d50072d20a946efec552f9f63f88f83040d17b44d6bb2daf05b933de05e6a4df583487e18848454e47cfcd57130b16faf86752b2dde5dee43212d1ff  0004-pcie-qcom-retry-link-training-with-endpoint-reset.patch
@@ -121,4 +122,5 @@ a735472b67f1056b0cbbc13b4c6c1aaec98edae7c57a0b0cea344369fa666544210e0c9cbc8cf423
 2eadae975e9e57cb9f7ed839c50dd63b2a31e18cfc81ec2330b59db8f8bdf274544067f73a2b3c099d79fb809765c3e31830eb8cf9b9a5fb786bf56e4ec29ae9  0015-msm-dsi-round-byte-clock-to-the-pll-rate.patch
 1dee41745688b4b41408a6c364e73853fd6181734b449768c5d2f13235554f0b4be59b0251273a5dd44aadb736e1fcf156dbbfd53b9f4c2bd29f5790184d9843  0016-ipa-backport-v5.x-gsi-fixes.patch
 cab180f687f236a64969c641b0fe8b32df64369239649b32cc21a36b91dc4e687a95e1e58b33a9b07f48537fd35073905b0f911cf2a8eb27051a2fc7cfa49b99  0018-panel-l3-42-02-0a-stock-timing-switch-tails.patch
+ce4d82ea5ae73204498fef36e4ed99b989b5ca93d6cfeb5b79b3b44445d2735aebfa173451a8dc492138c99da3cd3ae4953b069be659c498671b28e2e40ef520  0019-input-add-awinic-aw8697-haptics-driver.patch
 "

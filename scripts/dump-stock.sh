@@ -11,6 +11,7 @@
 #   - the stock devicetree, kernel cmdline and bootconfig
 #   - touchscreen and GPU firmware from /vendor/firmware
 #   - the WLAN MAC from persist
+#   - the sensor stack files (SLPI libraries, configs, per-unit registry)
 #   - raw images of the device-unique partitions (persist with sensor/audio/
 #     camera calibration, modem EFS with IMEI/RF calibration, ...), verified
 #     against the phone by SHA-256. Nothing is written to the phone.
@@ -97,6 +98,21 @@ for p in $PARTS; do
 	fi
 done
 (cd "$out/partitions" && sha256sum *.img > SHA256SUMS)
+
+# Sensor stack (SLPI): the DSP-side libraries, the sensor configs and this
+# unit's sensor registry/calibration (persist). Needed for hexagonrpcd +
+# libssc; the registry is per-device factory data, keep it private.
+echo "==> sensor stack (dsp libraries, sensor configs, sensor registry)"
+for d in /vendor/dsp/sdsp /vendor/etc/sensors /mnt/vendor/persist/sensors; do
+	name="$(echo "$d" | tr / _ | sed 's/^_//')"
+	adb exec-out "su -c 'tar -C / -cf - ${d#/} 2>/dev/null'" > "$out/$name.tar"
+	if [ -s "$out/$name.tar" ]; then
+		echo "    $d ($(($(wc -c < "$out/$name.tar") / 1024)) KiB)"
+	else
+		rm -f "$out/$name.tar"
+		echo "    $d: not found"
+	fi
+done
 
 echo
 echo "Saved to $out"
