@@ -1,0 +1,37 @@
+drm/panel: l3-42-02-0a: stock timing-switch tails for 60 and 120 Hz.
+
+Stock ends every switch into 120 Hz with page 2 "cc 30; ce 01; 10 ms; cc 00"
+and into 60 Hz with page 2 "cc 00". Without the 60 Hz tail that mode ran at
+~29 Hz (TE was a 50 % square wave at 29.3 Hz). At 120 Hz the tail brings the
+measured TE from 116.7 Hz to 121.7 Hz.
+
+(An earlier version also switched DSC to 10 bpc like stock; on 6.13's msm DSI
+that produced a screen of static noise, so the panel stays at 8 bpc.)
+
+diff --git a/drivers/gpu/drm/panel/panel-l3-42-02-0a-dsc.c b/drivers/gpu/drm/panel/panel-l3-42-02-0a-dsc.c
+--- a/drivers/gpu/drm/panel/panel-l3-42-02-0a-dsc.c
++++ b/drivers/gpu/drm/panel/panel-l3-42-02-0a-dsc.c
+@@ -103,6 +103,9 @@
+ 	case 60:
+ 		mipi_dsi_dcs_write_seq(dsi, 0x2f, 0x01);
+ 		mipi_dsi_dcs_write_seq(dsi, MIPI_DCS_SET_GAMMA_CURVE, 0x01);
++		/* stock timing-switch tail for 60 Hz */
++		mipi_dsi_dcs_write_seq(dsi, 0xf0, 0x55, 0xaa, 0x52, 0x08, 0x02);
++		mipi_dsi_dcs_write_seq(dsi, 0xcc, 0x00);
+ 		break;
+ 	case 90:
+ 		mipi_dsi_dcs_write_seq(dsi, 0x2f, 0x03);
+@@ -121,6 +124,13 @@
+ 		mipi_dsi_dcs_write_seq(dsi, 0x6f, 0x09);
+ 		mipi_dsi_dcs_write_seq(dsi, 0xc0, 0x20);
+ 		mipi_dsi_dcs_write_seq(dsi, 0x2f, 0x02);
++		/* stock timing-switch tail for 120 Hz */
++		mipi_dsi_dcs_write_seq(dsi, 0xf0, 0x55, 0xaa, 0x52, 0x08, 0x02);
++		mipi_dsi_dcs_write_seq(dsi, 0xcc, 0x30);
++		mipi_dsi_dcs_write_seq(dsi, 0xce, 0x01);
++		msleep(10);
++		mipi_dsi_dcs_write_seq(dsi, 0xf0, 0x55, 0xaa, 0x52, 0x08, 0x02);
++		mipi_dsi_dcs_write_seq(dsi, 0xcc, 0x00);
+ 		break;
+ 	}
+ 	/* OSC calibration */
