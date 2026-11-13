@@ -1,0 +1,2 @@
+enable cupid-sensor-registry.service
+enable hexagonrpcd-sdsp.service

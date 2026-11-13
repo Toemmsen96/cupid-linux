@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=3
+pkgrel=4
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -14,6 +14,7 @@ depends="
 	firmware-xiaomi-cupid-cdsp
 	firmware-xiaomi-cupid-gpu
 	firmware-xiaomi-cupid-haptics
+	firmware-xiaomi-cupid-hexagonfs
 	firmware-xiaomi-cupid-initramfs
 	firmware-xiaomi-cupid-ipa
 	firmware-xiaomi-cupid-modem
@@ -22,6 +23,11 @@ depends="
 	linux-firmware-ath11k
 	linux-firmware-qca
 	linux-firmware-qcom
+	e2fsprogs-extra
+	hexagonrpcd
+	hexagonrpcd-udev
+	iio-sensor-proxy
+	libssc
 	make-dynpart-mappings
 	mkbootimg
 	postmarketos-base
@@ -49,6 +55,10 @@ source="
 	50-cupid-gmobile.conf
 	cupid-gmobile.sh
 	72-cupid-feedbackd.rules
+	cupid-sensor-registry.sh
+	cupid-sensor-registry.service
+	90-device-xiaomi-cupid.preset
+	81-libssc-xiaomi-cupid.rules
 "
 
 build() {
@@ -62,6 +72,10 @@ package() {
 	# from the "st,spi" compatible on this image. Load it explicitly.
 	install -Dm644 "$srcdir"/cupid-modules.conf \
 		"$pkgdir"/etc/modules-load.d/cupid.conf
+
+	# Sensors (SLPI via hexagonrpcd + libssc): accelerometer orientation.
+	install -Dm644 "$srcdir"/81-libssc-xiaomi-cupid.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/81-libssc-xiaomi-cupid.rules
 
 	# Lets feedbackd (Phosh haptics) use the AW8697 vibration motor.
 	install -Dm644 "$srcdir"/72-cupid-feedbackd.rules \
@@ -138,8 +152,16 @@ openrc() {
 
 systemd() {
 	install_if="$pkgname=$pkgver-r$pkgrel systemd"
+	depends="hexagonrpcd-systemd"
 
-	mkdir -p "$subpkgdir"
+	# Copies this unit's sensor calibration from persist before
+	# hexagonrpcd-sdsp starts; both enabled by the preset.
+	install -Dm755 "$srcdir"/cupid-sensor-registry.sh \
+		"$subpkgdir"/usr/libexec/cupid-sensor-registry
+	install -Dm644 "$srcdir"/cupid-sensor-registry.service \
+		"$subpkgdir"/usr/lib/systemd/system/cupid-sensor-registry.service
+	install -Dm644 "$srcdir"/90-device-xiaomi-cupid.preset \
+		"$subpkgdir"/usr/lib/systemd/system-preset/90-device-xiaomi-cupid.preset
 }
 
 sha512sums="
@@ -154,4 +176,8 @@ a3a1515987fa3e8ce2c67fdc13ed21a837c0d1d420ad4b51eb23a6fc799b8c3dd4e12d8f8bcf8462
 c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f97d83ba75eab23885582375214dccdc890dcdc5656ae7ea6  50-cupid-gmobile.conf
 1f1600d9cec21206d0c4c0d8d0cde34b5f23121b2276a0c2af1ffa2cd37b4ce6048ff12ca1fd8aca5b121919e5a1aaadfa1fb124d83f286042e8a92c50a1e65c  cupid-gmobile.sh
 046e5b8d40e83b7e172e9f51ff62f4568827492e18ef394a114923c99bf7b33e060be42e3ec9eb4174cc8326538f35e1130733c6add2dc8621498ae723f1b451  72-cupid-feedbackd.rules
+50faec2fd6507d58a0cb8032f7d909b6148a18db17e194ad920aae4f25ebd3f1d5a12207414e8aa6510dd20a0cec0ccc530d2d21cfb23e67b073a00cf944ae12  cupid-sensor-registry.sh
+789c3be3bc9c288fde49a6568e7175759ab068bb73fac134c76b755dacdc9e0540ee03a504586d0c661094e5344a3c220bd6f5c6143da8ecf45a32fb3f146409  cupid-sensor-registry.service
+7c0dd13c2f73f920acf98842e3d01abf457999ce90fb472dc061f71e73dc82adcd0fdb4657a5553aa94439a11b7f94a9cff130fd98f2ddeebf53dfc6fb66e302  90-device-xiaomi-cupid.preset
+2f47bcd412f51054f38642c458ca6811de5096630305335ac82c70dbd742ba4a6034154054d042f834250651618823e875f8f70f7fe027ed3dc90b626fe49270  81-libssc-xiaomi-cupid.rules
 "
