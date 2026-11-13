@@ -27,7 +27,7 @@ fix that is in this repository but not yet booted.
 | Bluetooth | works | works | controller up | needs an address: `bootmac` |
 | GPS | untested | untested | | modem/GNSS over QMI once the modem runs |
 | NFC | broken | no | | NXP NCI on i2c9, nodes commented out in the devicetree |
-| Modem | broken | untested | registers, no data yet | pkgrel 3: IPA v5.1 probes, ModemManager registers on LTE/5G NR (Sunrise), bearers get addresses, uplink reaches IPA, rx stays 0, and IPA's first runtime suspend hangs in `gsi_channel_suspend`. Cause found: 6.13's v5.0 GSI register table names the channel event-ring field `ERINDEX` while the code encodes `CH_ERINDEX`, so every channel was bound to event ring 0. Patch 0016 backports that upstream fix (56007972c0b1) and four related v5.x fixes (pending). The device package keeps IPA powered until this is verified. No VoLTE |
+| Modem | broken | untested | data works | Verified on pkgrel 6 (2026-11-13): LTE/5G NR on Sunrise, DNS, HTTP, 5 MB download in 6 s, no drops; IPA runtime suspend/resume works. The cause was 6.13's v5.0 GSI register table (`ERINDEX` vs `CH_ERINDEX`, every channel bound to event ring 0), fixed by upstream 56007972c0b1 in patch 0016 together with four related fixes; IPA v5.1 itself is the pending upstream series (0012/0013). APN must be set by hand (`nmcli connection add type gsm ifname '*' con-name 'Mobile data' apn internet` for Sunrise/yallo). Calls/SMS/VoLTE untested |
 | FDE | broken | no | | touch is not in the initramfs (the driver needs its firmware there too), so unl0kr cannot take input |
 | USB OTG | broken | untested | | `dr_mode = "otg"`, USB 2.0 only |
 | Sensors | broken | no | | need the SLPI and a userspace sensor stack (hexagonrpc/libssc), not set up |

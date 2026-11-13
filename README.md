@@ -41,7 +41,7 @@ First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on 2026-11-12.
 
 | Works | Partial / open | Not working |
 |---|---|---|
-| boot, USB networking + SSH, storage, display (120 Hz), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery level, USB-C headphones, zram swap | display shows sporadic corruption on interaction; modem registers on LTE/5G and gets bearers, but no data flows yet | internal speakers, camera, sensors, haptics, NFC, fingerprint |
+| boot, USB networking + SSH, storage, display (120 Hz), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery level, mobile data (LTE/5G), USB-C headphones, zram swap | display shows sporadic corruption on interaction; calls/SMS untested | internal speakers, camera, sensors, haptics, NFC, fingerprint |
 
 The details, measurements and what was ruled out are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md); fixes for problems
@@ -65,7 +65,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`, topology symlink to the HDK topology. USB-C headphones work (verified on cupid); the internal speakers over tertiary TDM remain an unsolved SoC/firmware problem. | patches 0006, 0007, 0008; devicetree; device package |
 | Battery | `CONFIG_BATTERY_QCOM_BATTMGR` and `pmic-glink` so the ADSP battery manager reports charge level and state. The cupid firmware never answers `model_name`/`time_to_full_avg`; those reads blocked a second each (~70 errors a minute), the driver now stops asking after three timeouts. | kernel config, patch 0010 |
 | Display | Runs at 120 Hz like stock (selectable 60/90/120 via `panel_l3_42_02_0a_dsc.refresh_rate`); at 60 Hz the OLED's PWM dimming flickered. Brightness is kept while the panel is off instead of failing and leaving DSI in HS mode. DSI byte clock rounded to the PLL rate (upstream backport). | patches 0011, 0014, 0015 |
-| Modem data | IPA v5.1 support backported from the pending upstream "SM8450 IPA support" series, devicetree node enabled; IPA runtime PM kept on because its first suspend hangs. | patches 0012, 0013; device package udev rule |
+| Modem data | IPA v5.1 support backported from the pending upstream "SM8450 IPA support" series, devicetree node enabled, plus the upstream IPA v5.x GSI fixes (event rings were never programmed). Mobile data works. | patches 0012, 0013, 0016 |
 | Swap | zstd/lz4 zram backends (pmOS asks for zstd, the kernel only had LZO). | kernel config |
 | Thermal | 85 C passive cooling maps for all CPU zones (`sm8450.dtsi` has none, so the SoC could only hit its critical trip). | devicetree |
 | A/B slots | `soc-qcom-qbootctl` marks the slot successful; the previous cupid package never built its openrc subpackage, so ABL rolled back after about seven boots. | device package |
@@ -77,8 +77,7 @@ FM, fast charging (vendor charge pumps; expect USB-PD rates), internal
 speakers (CS35L41 over TDM, an AudioReach gap), sensors (need the SLPI and a
 userspace sensor stack), haptics. Open investigations: the display corruption
 (TE is clean at 120 Hz; stock drives DSC with 10 bpc over RGB101010, which
-6.13's DSI host cannot do yet) and modem data (uplink reaches IPA, nothing comes
-back). Details per component are in
+6.13's DSI host cannot do yet). Details per component are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md).
 
 ## Layout
