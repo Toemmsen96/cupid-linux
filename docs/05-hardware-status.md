@@ -35,6 +35,42 @@ fix that is in this repository but not yet booted.
 | Fingerprint | | no | |
 | zram swap | | | works | kernel had only the LZO backend, pmOS asks for zstd; zstd/lz4 backends enabled, verified on pkgrel 1 | Goodix, no mainline driver |
 
+## Open issue: sporadic display corruption
+
+Seen since the first boot, 60 and 120 Hz alike: when the picture changes
+(tapping, scrolling, page transitions) parts of the screen briefly show
+horizontal noise bands, content shifted or duplicated sideways, or doubled
+lines. A phosh screenshot taken at the same moment is clean, so the damage
+happens between the DPU and the panel (DSC command mode over DSI). Better since
+pkgrel 7 (stock timing-switch tails, TE 121.7 Hz at 120 Hz), not gone.
+
+Measured / ruled out:
+- not the DSI PLL: 0 DCS commands and 0 link-clock changes while glitching
+  (0015, the upstream byte-clock rounding fix, is kept anyway);
+- DSC RC parameters: the panel's own 0x91 values equal the kernel's;
+- TE: GPIO 86 / mdp_vsync like stock, clean 1.9 % pulse at 120 Hz;
+- the DPU 8.x vsync-source regression, the cmd-mode hdisplay / bits_per_pclk
+  and INTF data_width fixes upstream: not applicable to this tree or mode;
+- tear check `sync_cfg_height = 0xfff0` like stock: mainline never starts a
+  frame ("ctl start interrupt wait failed");
+- 10 bpc DSC like stock (`qcom,mdss-dsc-bit-per-component = <10>`, the panel's
+  0x91 header 0xab): static noise on 6.13's DSI host.
+
+Left to try:
+- whether a glitch disappears by itself after one refresh (frame collides with
+  scan-out) or stays until the area is redrawn (bad data in the panel GRAM) —
+  film it at 240 fps; this decides between the two directions below;
+- 10 bpc again once the 2026 upstream DSI changes are backported (RGB101010
+  support cebf747abeeb, bits_per_pclk 2d51cfb77daa, hdisplay ac47870fd795 and
+  82159db4371f), keeping stock's 832 MHz link;
+- D-PHY margin: mainline T_LPX (hs_rqst) is 4 against stock's 8, stock runs
+  832 MHz with spread spectrum (we run ~796 MHz);
+- the 0x07 compression-mode packet mainline sends after the PPS, which stock
+  never sends;
+- runtime experiments on INTF1 tear-check registers (base 0xae36000, only
+  with the display on) to test start position / threshold changes without a
+  rebuild.
+
 ## Kernel patches carried
 
 From the zeus port, all SM8450-generic:
