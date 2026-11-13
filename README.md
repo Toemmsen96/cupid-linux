@@ -41,7 +41,7 @@ First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on 2026-11-12.
 
 | Works | Partial / open | Not working |
 |---|---|---|
-| boot, USB networking + SSH, storage, display (120 Hz), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery level, mobile data (LTE/5G), USB-C headphones, zram swap | display shows sporadic corruption on interaction; calls/SMS untested | internal speakers, camera, sensors, fingerprint (haptics and NFC: drivers added, untested) |
+| boot, USB networking + SSH, storage, display (120 Hz), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery level, mobile data (LTE/5G), USB-C headphones, zram swap | display shows sporadic corruption on interaction; calls/SMS untested | internal speakers, camera, haptics (driver crashes, disabled), motion sensors (light works), fingerprint; NFC driver loads, untested |
 
 The details, measurements and what was ruled out are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md); fixes for problems
@@ -66,7 +66,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Battery | `CONFIG_BATTERY_QCOM_BATTMGR` and `pmic-glink` so the ADSP battery manager reports charge level and state. The cupid firmware never answers `model_name`/`time_to_full_avg`; those reads blocked a second each (~70 errors a minute), the driver now stops asking after three timeouts. | kernel config, patch 0010 |
 | Display | Runs at 120 Hz like stock (selectable 60/90/120 via `panel_l3_42_02_0a_dsc.refresh_rate`); at 60 Hz the OLED's PWM dimming flickered. Brightness is kept while the panel is off instead of failing and leaving DSI in HS mode. DSI byte clock rounded to the PLL rate (upstream backport). | patches 0011, 0014, 0015 |
 | Modem data | IPA v5.1 support backported from the pending upstream "SM8450 IPA support" series, devicetree node enabled, plus the upstream IPA v5.x GSI fixes (event rings were never programmed). Mobile data works. | patches 0012, 0013, 0016 |
-| Haptics, NFC | AW8697 vibration motor driver (feedbackd-ready), NXP SN100T NFC node for `nxp-nci-i2c`, touch driver and firmware in the initramfs (unl0kr input for FDE). | patch 0019; devicetree; device and firmware packages |
+| Haptics, NFC | AW8697 vibration motor driver (crashes in probe on hardware, node disabled for now), NXP SN100T NFC node for `nxp-nci-i2c`, touch driver and firmware in the initramfs (unl0kr input for FDE). | patch 0019; devicetree; device and firmware packages |
 | Swap | zstd/lz4 zram backends (pmOS asks for zstd, the kernel only had LZO). | kernel config |
 | Thermal | 85 C passive cooling maps for all CPU zones (`sm8450.dtsi` has none, so the SoC could only hit its critical trip). | devicetree |
 | A/B slots | `soc-qcom-qbootctl` marks the slot successful; the previous cupid package never built its openrc subpackage, so ABL rolled back after about seven boots. | device package |
