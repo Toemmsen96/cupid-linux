@@ -1,5 +1,0 @@
-# IPA v5.1 (patches 0012/0013 in the kernel): the first runtime suspend hangs
-# in gsi_channel_suspend() waiting for the modem TX channel to quiesce. The
-# kworker stays in D state, the rmnet_ipa0 queue stays stopped, and a normal
-# reboot hangs. Keep IPA powered until the GSI suspend path is fixed.
-ACTION=="add|bind", SUBSYSTEM=="platform", KERNEL=="3f40000.ipa", ATTR{power/control}="on"
