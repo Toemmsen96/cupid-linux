@@ -1,0 +1,74 @@
+power: supply: qcom_battmgr: translate Xiaomi's battery property ids.
+
+Xiaomi's SM8450 battery firmware (downstream qti_battery_charger.h) has an
+extra BATT_CONSTANT_CURRENT at index 12, so BATT_TEMP and everything after it
+are shifted by one against upstream. On cupid the battery "temperature" read
+2,000,000 (the 2 A constant current) and was reported as 20000 C to upower
+and the thermal zone, "technology" was 114, the charge counter 3, and the
+model_name/time_to_full_avg requests got replies of the wrong type that were
+dropped without completing the request (1 s timeouts).
+
+On xiaomi,cupid shift requests for ids >= BATT_TEMP up by one and replies
+back down, ignoring the extra id.
+
+diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -5,6 +5,7 @@
+  */
+ #include <linux/auxiliary_bus.h>
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/mutex.h>
+ #include <linux/of_device.h>
+ #include <linux/power_supply.h>
+@@ -316,6 +317,16 @@
+ 	u8 bat_timeouts[32];
+ 
+ 	/*
++	 * Xiaomi's SM8450 battery firmware inserts BATT_CONSTANT_CURRENT at
++	 * index 12 of the battery property list (downstream
++	 * qti_battery_charger.h), shifting BATT_TEMP and everything after it by
++	 * one. Without translating, "temperature" returned the 2 A constant
++	 * charge current (20000 C), "technology" the temperature, and the
++	 * string reply for model_name arrived where an int was expected.
++	 */
++	bool xiaomi_bat_props;
++
++	/*
+ 	 * @lock is used to prevent concurrent power supply requests to the
+ 	 * firmware, as it then stops responding.
+ 	 */
+@@ -441,6 +452,8 @@
+ 		return -EINVAL;
+ 
+ 	prop = sm8350_bat_prop_map[psp];
++	if (battmgr->xiaomi_bat_props && prop >= BATT_TEMP)
++		prop++;
+ 
+ 	if (prop < ARRAY_SIZE(battmgr->bat_timeouts) &&
+ 	    battmgr->bat_timeouts[prop] >= BATTMGR_MAX_TIMEOUTS)
+@@ -1120,6 +1133,14 @@
+ 	switch (opcode) {
+ 	case BATTMGR_BAT_PROPERTY_GET:
+ 		property = le32_to_cpu(resp->intval.property);
++		if (battmgr->xiaomi_bat_props && property >= BATT_TEMP) {
++			/* never requested: Xiaomi's BATT_CONSTANT_CURRENT */
++			if (property == BATT_TEMP) {
++				battmgr->error = -ENODATA;
++				goto out_complete;
++			}
++			property--;
++		}
+ 		if (property == BATT_MODEL_NAME) {
+ 			if (payload_len != sizeof(resp->strval)) {
+ 				dev_warn(battmgr->dev,
+@@ -1372,6 +1393,8 @@
+ 	mutex_init(&battmgr->lock);
+ 	init_completion(&battmgr->ack);
+ 
++	battmgr->xiaomi_bat_props = of_machine_is_compatible("xiaomi,cupid");
++
+ 	match = of_match_device(qcom_battmgr_of_variants, dev->parent);
+ 	if (match)
+ 		battmgr->variant = (unsigned long)match->data;
