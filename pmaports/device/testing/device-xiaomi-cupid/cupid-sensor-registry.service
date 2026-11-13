@@ -1,0 +1,12 @@
+[Unit]
+Description=Copy the Xiaomi 12 sensor calibration from persist
+Before=hexagonrpcd-sdsp.service
+ConditionPathExists=/dev/disk/by-partlabel/persist
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/cupid-sensor-registry
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
