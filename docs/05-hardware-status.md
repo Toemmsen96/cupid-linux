@@ -27,7 +27,7 @@ fix that is in this repository but not yet booted.
 | Bluetooth | works | works | controller up | needs an address: `bootmac` |
 | GPS | untested | untested | | modem/GNSS over QMI once the modem runs |
 | NFC | broken | no | | NXP NCI on i2c9, nodes commented out in the devicetree |
-| Modem | broken | untested | registers, no data yet | pkgrel 3: IPA v5.1 probes, `rmnet_ipa0` appears, ModemManager registers on LTE/5G NR (Sunrise), IMS bearer and an `internet` bearer get addresses. Uplink packets reach IPA and GSI interrupts fire, but nothing comes back (rx 0). IPA's first runtime suspend hangs in `gsi_channel_suspend` (kworker in D state, TX queue stuck, reboot hangs); the device package keeps IPA powered via udev until that is fixed. No VoLTE |
+| Modem | broken | untested | registers, no data yet | pkgrel 3: IPA v5.1 probes, ModemManager registers on LTE/5G NR (Sunrise), bearers get addresses, uplink reaches IPA, rx stays 0, and IPA's first runtime suspend hangs in `gsi_channel_suspend`. Cause found: 6.13's v5.0 GSI register table names the channel event-ring field `ERINDEX` while the code encodes `CH_ERINDEX`, so every channel was bound to event ring 0. Patch 0016 backports that upstream fix (56007972c0b1) and four related v5.x fixes (pending). The device package keeps IPA powered until this is verified. No VoLTE |
 | FDE | broken | no | | touch is not in the initramfs (the driver needs its firmware there too), so unl0kr cannot take input |
 | USB OTG | broken | untested | | `dr_mode = "otg"`, USB 2.0 only |
 | Sensors | broken | no | | need the SLPI and a userspace sensor stack (hexagonrpc/libssc), not set up |
@@ -54,6 +54,7 @@ From the zeus port, all SM8450-generic:
 | 0012 IPA v5.1 (backport) | Esteban Urrutia's pending "SM8450 IPA support" v2 2/3 plus its `IPA_MEM_MODEM_STATS_DROP` dependency, rebased onto 6.13 (no IPA v5.2 there) |
 | 0014 panel l3-42-02-0a refresh rate (ours) | `refresh_rate` module parameter, 60/90/120 Hz (default 120) with the stock per-rate commands (DCS 0x2f 01/03/02 plus the 90/120 Hz extras); the mode clock follows |
 | 0015 msm/dsi byte clock rounding (backport) | upstream 6cd33b6f4155 + 2028280686f4: round the 6G byte clock to the PLL-achievable rate so DCS commands no longer re-lock the PLL (not the cause of the screen glitches, see above) |
+| 0016 IPA v5.x GSI fixes (backport) | upstream 56007972c0b1 (event ring index never programmed on v5.0+), 9709b56d908a, 1335b903cf2e, de08f9585692, 3cbfd627ee72 |
 | 0013 sm8450 IPA node (backport) | v2 3/3: disabled `ipa` node and IMEM `modem-tables`; cupid enables it with `qcom,gsi-loader = "self"` and `ipa_fws.mbn` |
 
 Dropped on purpose (zeus numbering): 0001 (PM8008 interrupt, zeus-only),
