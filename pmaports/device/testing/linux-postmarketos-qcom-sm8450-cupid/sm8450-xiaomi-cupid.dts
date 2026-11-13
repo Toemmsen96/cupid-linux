@@ -811,9 +811,17 @@
 	 * for completeness; the driver plays from the chip RAM and does not
 	 * use it.
 	 */
+	/*
+	 * Disabled: on hardware (2026-11-13) the probe ran for ~9 minutes
+	 * (probably the chip init / f0 calibration) while holding the device
+	 * lock, so journald, logind and new SSH sessions blocked on its uevent,
+	 * and then oopsed in input_ff_create(). Re-enable once the driver is
+	 * fixed.
+	 */
 	haptics@5a {
 		compatible = "awinic,aw8697";
 		reg = <0x5a>;
+		status = "disabled";
 
 		interrupts-extended = <&tlmm 90 IRQ_TYPE_EDGE_FALLING>;
 		reset-gpios = <&tlmm 89 GPIO_ACTIVE_LOW>;
