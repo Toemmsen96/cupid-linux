@@ -1,0 +1,28 @@
+drm/msm/dpu: let command-mode panels pace frames by TE only (sync_cfg_height).
+
+The tear check reloads its line counter with vdisplay on every TE and
+generates an internal vsync when the counter reaches sync_cfg_height.
+Mainline uses 2 * vtotal, which on the Xiaomi 12 panel leaves only ~41 us of
+margin at 120 Hz (8.610 ms vs the measured 8.569 ms TE period) and makes the
+DPU self-trigger on every frame at 60 Hz, starting transfers that collide
+with the panel's scan-out of its compressed GRAM. Stock (downstream SDE)
+programs 0xfff0, so the panel's TE alone paces frames.
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c
+@@ -382,7 +382,13 @@
+ 	 * TE event coming from the display TE pin we won't stall immediately
+ 	 */
+ 	tc_cfg.hw_vsync_mode = 1;
+-	tc_cfg.sync_cfg_height = mode->vtotal * 2;
++	/*
++	 * Downstream uses 0xfff0: never self-trigger, let the TE pace frames.
++	 * vtotal * 2 left almost no margin on the Xiaomi 12 panel (TE period
++	 * longer than the nominal mode) and caused transfers to collide with
++	 * scan-out.
++	 */
++	tc_cfg.sync_cfg_height = 0xfff0;
+ 	tc_cfg.vsync_init_val = mode->vdisplay;
+ 	tc_cfg.sync_threshold_start = DEFAULT_TEARCHECK_SYNC_THRESH_START;
+ 	tc_cfg.sync_threshold_continue = DEFAULT_TEARCHECK_SYNC_THRESH_CONTINUE;
