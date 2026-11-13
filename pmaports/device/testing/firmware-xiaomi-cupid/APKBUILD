@@ -7,18 +7,22 @@
 # hosts the same repository and its archive contains the LFS-stored modem.mbn
 # as a real file (verified: 108 MB ELF, same sha512 as the LFS object).
 #
+# The same repository carries aw8697_haptic.bin, the waveform library the
+# AW8697 haptics driver (kernel patch 0019) writes into the chip RAM.
+#
 # The touchscreen firmware is not part of that repository. The ST FTS driver
 # refuses to probe without it (FW_UPDATE_ON_PROBE returns -ENODEV), so it is
 # fetched from the LineageOS vendor blob repository for cupid, pinned to a
 # commit.
 pkgname=firmware-xiaomi-cupid
 pkgver=2
-pkgrel=0
+pkgrel=1
 pkgdesc="Firmware for Xiaomi 12"
 subpackages="
 	$pkgname-adsp
 	$pkgname-cdsp
 	$pkgname-gpu
+	$pkgname-haptics
 	$pkgname-initramfs
 	$pkgname-ipa
 	$pkgname-modem
@@ -69,8 +73,21 @@ gpu() {
 		"$subpkgdir/lib/firmware/qcom/"
 }
 
+haptics() {
+	pkgdesc="Xiaomi 12 haptics waveform library (Awinic AW8697)"
+
+	# request_firmware() with the bare name, so top of /lib/firmware.
+	install -Dm644 "$builddir"/aw8697_haptic.bin \
+		"$subpkgdir"/lib/firmware/aw8697_haptic.bin
+}
+
 initramfs() {
 	pkgdesc="Xiaomi 12 firmware to be included in the initramfs"
+
+	# GPU firmware, plus st_fts_l3.ftb: the touch driver is loaded in the
+	# initramfs (device package modules-initfs) so unl0kr can take input
+	# for FDE, and it requests its firmware at probe without retrying
+	# once the rootfs is mounted.
 
 	install -Dm644 "$srcdir/30-initramfs-firmware.files" -t \
 		"$subpkgdir"/usr/share/mkinitfs/files
@@ -118,7 +135,7 @@ touchscreen() {
 
 sha512sums="
 fdaa246049e1e00e01f83c203f978389d2f4474d1b093a9737fb67b4581a6dabc3428c7912a348b50c0d6ce19da77c190048683afe876c9098024bd04ad2c601  firmware-xiaomi-cupid-5da2787e4504ddb00107015432fd936156024ebc.tar.gz
-60c1d9f60ed66c55b64b035d2b8296c1d090048473d2f4a07136feca52d8b7ef829e02d7c37e58cb7196907c20160061def5fd2109de58b0d7981c9af345c5dc  30-initramfs-firmware.files
+2944841494c21570f473a09e45d88d1b78675e27eb9d562bc3cc110fc7faf8bc40f21f6328a7f834c0badb2332962d32f2d2c2cb5ec82ea34d817777d7649c85  30-initramfs-firmware.files
 e6624bb91a1477e6fd0a3a0c4ce93707d5827053d19586142504626b98af2aaac869969c53e0efb36b8b5d9be86c5e077e1ab6849753ac6800c57a858b1c6ce6  st_fts_l3-ba672d8f47c5533b2fb45bae5b4528594da70107.ftb
 f39e70316b07ececbec880b96fa9f0661262f92074d666f981ff174f2a5f22a65e81b3be3b342a4edef40d572279a5a58d0f21dc57666c7089e1fb88f14ac9c2  st_fts_l3_thp-ba672d8f47c5533b2fb45bae5b4528594da70107.ftb
 df3663ec88fed126f5eea21cd02526a7dd3ef9f676545f3d883f4f7223c2ece49cb485b839846d7bca418d711f1059f78afeaa513b28263fa6f49106f554cce5  stm_fts_production_limits-ba672d8f47c5533b2fb45bae5b4528594da70107.csv
