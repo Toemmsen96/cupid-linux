@@ -44,6 +44,11 @@ lines. A phosh screenshot taken at the same moment is clean, so the damage
 happens between the DPU and the panel (DSC command mode over DSI). Better since
 pkgrel 7 (stock timing-switch tails, TE 121.7 Hz at 120 Hz), not gone.
 
+Content-dependent (user observation, 2026-11-13): it shows up in Settings and
+on buttons in the default GTK apps, never in the terminal. Flat areas,
+gradients and rounded widgets glitch, plain text does not. That points at the
+DSC data path rather than frame timing.
+
 Measured / ruled out:
 - not the DSI PLL: 0 DCS commands and 0 link-clock changes while glitching
   (0015, the upstream byte-clock rounding fix, is kept anyway);
@@ -57,6 +62,14 @@ Measured / ruled out:
   0x91 header 0xab): static noise on 6.13's DSI host.
 
 Left to try:
+- first, cheapest: make the panel's own DSC setup agree with our 8 bpc PPS.
+  The init sends `0x91 ab 28 00 0c ...`; 0xab is "bpc 10 / line buffer 11" in
+  PPS byte-3 encoding, while the kernel encodes 8 bpc (PPS byte 3 = 0x89).
+  The RC values in the rest of 0x91 are identical for 8 and 10 bpc at this
+  slice size, so changing only the first byte to 0x89 in
+  panel-l3-42-02-0a-dsc.c tests whether the panel decodes part of the stream
+  with its 10 bpc setting. A content-dependent mismatch would look exactly
+  like this;
 - whether a glitch disappears by itself after one refresh (frame collides with
   scan-out) or stays until the area is redrawn (bad data in the panel GRAM) —
   film it at 240 fps; this decides between the two directions below;
