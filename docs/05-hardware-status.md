@@ -20,7 +20,7 @@ fix that is in this repository but not yet booted.
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
 | Audio | broken | partial | card probes | headphone/codec-DMA path and USB-C audio; internal speakers (CS35L41 on tertiary TDM) do not work: the DSP never propagates a media format to the TDM sink, an audioreach gap |
-| Camera | broken | no (6.13); ultra-wide on 6.17 | ultra-wide raw capture works (6.17) | the 6.13 tree has no SM8450 CAMSS. On the 6.17 kernel (`next`) the OV13B10 ultra-wide streams 4208x3120 RAW10 through CSIPHY0/CSID0/VFE0 (test pattern and real image verified 2026-11-16), see [Cameras](#cameras). Main, front and macro sensors have no driver yet |
+| Camera | broken | no (6.13); ultra-wide on 6.17; ultra-wide + front on 7.3 | raw capture works (6.17, 7.3) | the 6.13 tree has no SM8450 CAMSS. On the 6.17 kernel (`next`) the OV13B10 ultra-wide streams 4208x3120 RAW10 through CSIPHY0/CSID0/VFE0 (test pattern and real image verified 2026-11-16). On 7.3 (`mainline`, pkgrel 3) the OV32B40 front camera also streams 3264x2448 RAW10 through CSIPHY3/CSID1/VFE1 (real image verified 2026-11-16), see [Cameras](#cameras). Main and macro sensors have no driver yet |
 | Camera flash | works | works | | `pm8350c_flash` |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
 | WiFi | works | works, stabilised | works | patches 0004/0005, PMU supplies, ASPM off, power save off |
@@ -42,7 +42,7 @@ First booted 2026-11-16 (kernel 7.3.4), installed over the 6.17 rootfs with
 
 | Works | Not yet re-checked |
 |---|---|
-| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe) | mobile data, audio output, sensors, camera streaming, the battery current sign (reads negative while charging) |
+| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe), front camera streaming (OV32B40, pkgrel 3) | mobile data, audio output, sensors, ultra-wide streaming, the battery current sign (reads negative while charging) |
 
 WiFi needed an upstream fix (0027): the qcom PCIe driver read `iommu-map`
 as 4-cell entries while sm8450.dtsi uses 5 (`#iommu-cells = <2>`), so the
@@ -126,8 +126,12 @@ SoC) streams raw Bayer from three sensors with a small CAMSS patch on top of
 the CSID/VFE 680 support that X1E80100 brought (6.17 has it, 6.13 does not)
 and a camcc fix without which every session after the first hangs the
 TITAN GDSC. Only the OV13B10 has a mainline driver (ACPI-only; patch 0024
-adds devicetree support). IMX766, OV32B40 and S5K5E9 have none; their
-register tables are in the CamX modules. The IFE/IPE processing pipeline has
+adds devicetree support). The OV32B40 has an out-of-tree driver from the
+Xiaomi 14 Ultra port
+([dianqk/nixos-android-devices](https://github.com/dianqk/nixos-android-devices),
+`pkgs/linux-kernel/sm8650/aurora/ov32b40.patch`), carried unchanged as
+mainline patch 0028. IMX766 and S5K5E9 have none; their register tables
+are in the CamX modules. The IFE/IPE processing pipeline has
 no mainline driver either, so the result is raw frames for libcamera's
 software ISP.
 
@@ -161,6 +165,33 @@ v4l2-ctl -d /dev/video0 --stream-mmap=4 --stream-count=3 --stream-to=/tmp/uw.raw
 
 Frames are packed RAW10 (GRBG), 5264 bytes per line. The sensor is mounted
 rotated by 90 degrees.
+
+### Front camera (7.3)
+
+The OV32B40 sits at 0x10 on CCI0 bus 0 (the stock module's slave address
+0x20 is the 8-bit form). The devicetree (`mainline` package) adds the two
+GPIO-switched rails as fixed regulators (DVDD 1.1 V on gpio93 from
+pm8350_s12, AVDD 2.8 V on gpio68 from BOB), MCLK5 on gpio105, reset on
+gpio127 and CSIPHY3 with four data lanes at 842.4 MHz, the link frequency
+of the driver's 3264x2448 mode. Verified 2026-11-16: chip ID read, frames
+of a real scene. WirePlumber/libcamera opens the media device at login;
+stop it (`systemctl --user stop wireplumber`) before capturing by hand:
+
+```sh
+M="media-ctl -d /dev/media0"; F="fmt:SBGGR10_1X10/3264x2448"
+$M -r
+$M -l '"msm_csiphy3":1->"msm_csid1":0[1]'
+$M -l '"msm_csid1":1->"msm_vfe1_rdi0":0[1]'
+for p in '"ov32b40 4-0010":0' '"msm_csiphy3":0' '"msm_csiphy3":1' \
+         '"msm_csid1":0' '"msm_csid1":1' '"msm_vfe1_rdi0":0' '"msm_vfe1_rdi0":1'; do
+	$M -V "$p[$F]"
+done
+v4l2-ctl -d /dev/video3 --set-fmt-video=width=3264,height=2448,pixelformat=pBAA
+v4l2-ctl -d /dev/video3 --stream-mmap=4 --stream-count=3 --stream-to=/tmp/front.raw
+```
+
+Frames are packed RAW10 (BGGR), 4080 bytes per line; the sensor is mounted
+rotated by 270 degrees.
 
 ## Kernel patches carried
 

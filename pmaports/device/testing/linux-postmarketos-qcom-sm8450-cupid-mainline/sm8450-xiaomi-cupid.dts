@@ -170,6 +170,31 @@
 		};
 	};
 
+	/* front camera rails, external LDOs switched by TLMM (stock CAMERA_F_DVDD/AVDD) */
+	cam_front_dvdd: regulator-cam-front-dvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_front_dvdd";
+		regulator-min-microvolt = <1100000>;
+		regulator-max-microvolt = <1100000>;
+		gpio = <&tlmm 93 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&pm8350_s12>;
+		pinctrl-0 = <&cam_front_dvdd_en>;
+		pinctrl-names = "default";
+	};
+
+	cam_front_avdd: regulator-cam-front-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_front_avdd";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		gpio = <&tlmm 68 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&vreg_bob>;
+		pinctrl-0 = <&cam_front_avdd_en>;
+		pinctrl-names = "default";
+	};
+
 	vph_pwr: vph-pwr-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vph_pwr";
@@ -1058,6 +1083,28 @@
 	};
 
 	/* stock cam_sensor_mclk1_active: ultra-wide */
+	/* stock cam_sensor_mclk5_active: front */
+	cam_mclk5_default: cam-mclk5-default-state {
+		pins = "gpio105";
+		function = "cam_mclk";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	cam_front_dvdd_en: cam-front-dvdd-en-state {
+		pins = "gpio93";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	cam_front_avdd_en: cam-front-avdd-en-state {
+		pins = "gpio68";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
 	cam_mclk1_default: cam-mclk1-default-state {
 		pins = "gpio101";
 		function = "cam_mclk";
@@ -1910,6 +1957,16 @@
 				remote-endpoint = <&cam_uw_ep>;
 			};
 		};
+
+		/* front OV32B40, stock csiphy-sd-index 3 */
+		port@3 {
+			csiphy3_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				remote-endpoint = <&cam_front_ep>;
+			};
+		};
 	};
 };
 
@@ -1947,6 +2004,40 @@
 				data-lanes = <1 2 3 4>;
 				link-frequencies = /bits/ 64 <560000000>;
 				remote-endpoint = <&csiphy0_ep>;
+			};
+		};
+	};
+
+	/*
+	 * Front: OmniVision OV32B40 (stock qcom,cam-sensor1), CCI0 bus 0 at
+	 * 0x10 next to the ultra-wide, four lanes into CSIPHY3, MCLK5 at
+	 * 19.2 MHz, reset gpio127. Driver and tables from the Xiaomi 14 Ultra
+	 * port (same sensor): one 3264x2448 binned mode at 842.4 MHz.
+	 */
+	camera@10 {
+		compatible = "ovti,ov32b40";
+		reg = <0x10>;
+
+		clocks = <&camcc CAM_CC_MCLK5_CLK>;
+		assigned-clocks = <&camcc CAM_CC_MCLK5_CLK>;
+		assigned-clock-rates = <19200000>;
+
+		reset-gpios = <&tlmm 127 GPIO_ACTIVE_LOW>;
+		pinctrl-0 = <&cam_mclk5_default>;
+		pinctrl-names = "default";
+
+		dovdd-supply = <&cam_l5>;
+		avdd-supply = <&cam_front_avdd>;
+		dvdd-supply = <&cam_front_dvdd>;
+
+		orientation = <0>;	/* front */
+		rotation = <270>;
+
+		port {
+			cam_front_ep: endpoint {
+				data-lanes = <1 2 3 4>;
+				link-frequencies = /bits/ 64 <842400000>;
+				remote-endpoint = <&csiphy3_ep>;
 			};
 		};
 	};
