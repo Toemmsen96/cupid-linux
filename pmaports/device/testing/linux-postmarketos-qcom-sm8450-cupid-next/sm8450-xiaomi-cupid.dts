@@ -744,11 +744,18 @@
 				regulator-max-microvolt = <2808000>;
 			};
 
-			/* I/O of all four sensors */
+			/*
+			 * I/O of all four sensors, and the pull-up rail of the
+			 * CCI buses. Kept on: while it is off SDA/SCL sit low,
+			 * and the first CCI transfer after it comes back times
+			 * out (the OV13B10's reset write, so every stream after
+			 * the first failed).
+			 */
 			cam_l5: ldo5 {
 				regulator-name = "pm8008j_l5";
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
+				regulator-always-on;
 			};
 
 			/* main camera OIS and autofocus */
@@ -1841,6 +1848,21 @@
  * Only the OV13B10 has a mainline driver. All MCLKs run at 19.2 MHz. The
  * CSIPHY rails are pm8350 L5 (0.88 V) and L6 (1.2 V), as on stock.
  */
+/*
+ * The fork's sm8450.dtsi ships the camera clock controller disabled
+ * (mainline enables it); without it neither CCI nor CAMSS get their
+ * TITAN_TOP power domain and both fail after the deferred-probe timeout.
+ * Mainline also gives it MXC next to MMCX (the camera PLLs run from MXC);
+ * with MMCX alone TITAN_TOP_GDSC never powers up ("status stuck at 'off'").
+ */
+&camcc {
+	power-domains = <&rpmhpd RPMHPD_MMCX>,
+			<&rpmhpd RPMHPD_MXC>;
+	required-opps = <&rpmhpd_opp_low_svs>,
+			<&rpmhpd_opp_low_svs>;
+	status = "okay";
+};
+
 &camss {
 	vdda-phy-supply = <&pm8350_l5>;
 	vdda-pll-supply = <&pm8350_l6>;

@@ -9,7 +9,9 @@ from the stock devicetree, the qcom,sm8450-camss binding and a disabled
 camss node in sm8450.dtsi. Verified on SM-X800 with three sensors.
 
 Rebased onto sm8450-mainline next (6.17-rc1): the CSIPHY regulator
-entries use 6.17's plain supply names (no per-supply load yet).
+entries use 6.17's plain supply names (no per-supply load yet), and the
+resources set .link_entities = camss_link_entities, which 6.17's
+camss_probe() calls unconditionally (NULL pointer oops without it).
 diff --git a/Documentation/devicetree/bindings/media/qcom,sm8450-camss.yaml b/Documentation/devicetree/bindings/media/qcom,sm8450-camss.yaml
 new file mode 100644
 index 000000000..f86fc4a62
@@ -1097,7 +1099,7 @@ index e08e70b93..0076317f4 100644
  static const struct camss_subdev_resources csiphy_res_8550[] = {
  	/* CSIPHY0 */
  	{
-@@ -3830,6 +4147,20 @@ static const struct camss_resources sc7280_resources = {
+@@ -3830,6 +4147,21 @@ static const struct camss_resources sc7280_resources = {
  	.link_entities = camss_link_entities
  };
  
@@ -1113,12 +1115,13 @@ index e08e70b93..0076317f4 100644
 +	.csiphy_num = ARRAY_SIZE(csiphy_res_sm8450),
 +	.csid_num = ARRAY_SIZE(csid_res_sm8450),
 +	.vfe_num = ARRAY_SIZE(vfe_res_sm8450),
++	.link_entities = camss_link_entities
 +};
 +
  static const struct camss_resources sm8550_resources = {
  	.version = CAMSS_8550,
  	.pd_name = "top",
-@@ -3870,6 +4201,7 @@ static const struct of_device_id camss_dt_match[] = {
+@@ -3870,6 +4202,7 @@ static const struct of_device_id camss_dt_match[] = {
  	{ .compatible = "qcom,sdm670-camss", .data = &sdm670_resources },
  	{ .compatible = "qcom,sdm845-camss", .data = &sdm845_resources },
  	{ .compatible = "qcom,sm8250-camss", .data = &sm8250_resources },
