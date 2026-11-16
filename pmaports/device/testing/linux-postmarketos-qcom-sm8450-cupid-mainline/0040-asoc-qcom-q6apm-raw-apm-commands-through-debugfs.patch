@@ -1,0 +1,176 @@
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Subject: [PATCH] ASoC: qcom: q6apm: raw APM commands through debugfs
+
+Bring-up aid for graphs the topology cannot describe yet (voice calls on
+the Xiaomi 12): /sys/kernel/debug/q6apm_raw takes [u32 opcode][payload],
+sends it to the APM and returns [u32 response opcode][payload] on read.
+Responses are matched by a token the driver never uses, so they do not
+disturb its own commands. Root only (0600, debugfs).
+---
+--- a/sound/soc/qcom/qdsp6/q6apm.c
++++ b/sound/soc/qcom/qdsp6/q6apm.c
+@@ -2,6 +2,7 @@
+ // Copyright (c) 2020, Linaro Limited
+ 
+ #include <dt-bindings/soc/qcom,gpr.h>
++#include <linux/debugfs.h>
+ #include <linux/delay.h>
+ #include <linux/jiffies.h>
+ #include <linux/kernel.h>
+@@ -9,7 +10,9 @@
+ #include <linux/of.h>
+ #include <linux/of_platform.h>
+ #include <linux/sched.h>
++#include <linux/sizes.h>
+ #include <linux/slab.h>
++#include <linux/uaccess.h>
+ #include <linux/soc/qcom/apr.h>
+ #include <linux/wait.h>
+ #include <sound/soc.h>
+@@ -898,6 +901,88 @@
+ 	.remove_order   = SND_SOC_COMP_ORDER_LAST,
+ };
+ 
++/*
++ * Raw APM commands for bring-up work (e.g. voice graphs that the topology
++ * cannot describe yet). A write of [u32 opcode][payload] sends one command
++ * to the APM and waits for its response; a read returns
++ * [u32 response opcode][response payload]. Responses are matched by a token
++ * the driver's own commands never use.
++ */
++#define Q6APM_RAW_TOKEN		0x52415721
++
++static ssize_t q6apm_raw_write(struct file *file, const char __user *ubuf,
++			       size_t count, loff_t *ppos)
++{
++	struct q6apm *apm = file->private_data;
++	struct gpr_pkt *pkt;
++	void *buf;
++	u32 opcode;
++	int ret;
++
++	if (count < sizeof(u32) || count > SZ_64K)
++		return -EINVAL;
++
++	buf = memdup_user(ubuf, count);
++	if (IS_ERR(buf))
++		return PTR_ERR(buf);
++
++	opcode = *(u32 *)buf;
++	pkt = audioreach_alloc_apm_pkt(count - sizeof(u32), opcode,
++				       Q6APM_RAW_TOKEN, GPR_APM_MODULE_IID);
++	if (IS_ERR(pkt)) {
++		kfree(buf);
++		return PTR_ERR(pkt);
++	}
++	memcpy((void *)pkt + GPR_HDR_SIZE, buf + sizeof(u32), count - sizeof(u32));
++	kfree(buf);
++
++	mutex_lock(&apm->raw_lock);
++	apm->raw_done = false;
++	apm->raw_rsp_len = 0;
++	apm->raw_rsp_opcode = 0;
++	ret = gpr_send_pkt(apm->gdev, pkt);
++	if (ret >= 0) {
++		if (!wait_event_timeout(apm->raw_wait, apm->raw_done, 5 * HZ))
++			ret = -ETIMEDOUT;
++		else
++			ret = count;
++	}
++	mutex_unlock(&apm->raw_lock);
++	kfree(pkt);
++
++	return ret;
++}
++
++static ssize_t q6apm_raw_read(struct file *file, char __user *ubuf,
++			      size_t count, loff_t *ppos)
++{
++	struct q6apm *apm = file->private_data;
++	u8 *out;
++	size_t len;
++	ssize_t ret;
++
++	out = kmalloc(sizeof(u32) + sizeof(apm->raw_rsp), GFP_KERNEL);
++	if (!out)
++		return -ENOMEM;
++
++	mutex_lock(&apm->raw_lock);
++	memcpy(out, &apm->raw_rsp_opcode, sizeof(u32));
++	memcpy(out + sizeof(u32), apm->raw_rsp, apm->raw_rsp_len);
++	len = sizeof(u32) + apm->raw_rsp_len;
++	mutex_unlock(&apm->raw_lock);
++
++	ret = simple_read_from_buffer(ubuf, count, ppos, out, len);
++	kfree(out);
++	return ret;
++}
++
++static const struct file_operations q6apm_raw_fops = {
++	.open = simple_open,
++	.write = q6apm_raw_write,
++	.read = q6apm_raw_read,
++	.llseek = default_llseek,
++};
++
+ static int apm_probe(gpr_device_t *gdev)
+ {
+ 	struct device *dev = &gdev->dev;
+@@ -923,6 +1008,11 @@
+ 
+ 	idr_init(&apm->modules_idr);
+ 
++	mutex_init(&apm->raw_lock);
++	init_waitqueue_head(&apm->raw_wait);
++	apm->raw_dentry = debugfs_create_file("q6apm_raw", 0600, NULL, apm,
++					      &q6apm_raw_fops);
++
+ 	g_apm = apm;
+ 
+ 	q6apm_get_apm_state(apm);
+@@ -942,6 +1032,9 @@
+ 
+ static void apm_remove(gpr_device_t *gdev)
+ {
++	struct q6apm *apm = dev_get_drvdata(&gdev->dev);
++
++	debugfs_remove(apm->raw_dentry);
+ 	of_platform_depopulate(&gdev->dev);
+ 	snd_soc_unregister_component(&gdev->dev);
+ }
+@@ -968,6 +1061,17 @@
+ 
+ 	result = data->payload;
+ 
++	if (hdr->token == Q6APM_RAW_TOKEN) {
++		size_t len = min_t(size_t, data->payload_size, sizeof(apm->raw_rsp));
++
++		apm->raw_rsp_opcode = hdr->opcode;
++		memcpy(apm->raw_rsp, data->payload, len);
++		apm->raw_rsp_len = len;
++		apm->raw_done = true;
++		wake_up(&apm->raw_wait);
++		return 0;
++	}
++
+ 	switch (hdr->opcode) {
+ 	case APM_CMD_RSP_GET_SPF_STATE:
+ 		apm->result.opcode = hdr->opcode;
+--- a/sound/soc/qcom/qdsp6/q6apm.h
++++ b/sound/soc/qcom/qdsp6/q6apm.h
+@@ -68,6 +68,15 @@
+ 	struct idr sub_graphs_idr;
+ 	struct idr containers_idr;
+ 	struct idr modules_idr;
++
++	/* Raw APM commands from debugfs (q6apm_raw), for bring-up work */
++	struct mutex raw_lock;
++	wait_queue_head_t raw_wait;
++	bool raw_done;
++	u32 raw_rsp_opcode;
++	size_t raw_rsp_len;
++	u8 raw_rsp[4096];
++	struct dentry *raw_dentry;
+ };
+ 
+ struct audio_buffer {
