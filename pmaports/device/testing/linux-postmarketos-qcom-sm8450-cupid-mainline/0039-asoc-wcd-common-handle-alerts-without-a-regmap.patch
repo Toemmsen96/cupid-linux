@@ -1,0 +1,33 @@
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Subject: [PATCH] ASoC: codecs: wcd-common: handle alerts from the device without a regmap
+
+wcd938x (and wcd937x/wcd939x) create the regmap on the TX SoundWire device
+only, while both devices share the interrupt domain. An alert on the RX
+device reached wcd_interrupt_callback() with dev_get_regmap() returning
+NULL, and regmap_read(NULL) oopsed in the SoundWire IRQ thread, which then
+exited with the IRQ still active (seen on a Xiaomi 12 when a phone call
+started). Run the nested handler once in that case; it reads the status
+through the codec's own regmap.
+---
+--- a/sound/soc/codecs/wcd-common.c
++++ b/sound/soc/codecs/wcd-common.c
+@@ -128,6 +128,19 @@
+ 	struct regmap *regmap = dev_get_regmap(&slave->dev, NULL);
+ 	u32 sts1, sts2, sts3;
+ 
++	/*
++	 * The codecs register their regmap on the TX SoundWire device only,
++	 * but the RX device shares the interrupt domain and can alert too.
++	 * The nested handler reads the status through the codec's own
++	 * regmap; without one here, run it once instead of polling a NULL
++	 * regmap (which oopsed in the IRQ thread on SM8450 when a call
++	 * started and left the codec without interrupts).
++	 */
++	if (!regmap) {
++		handle_nested_irq(irq_find_mapping(slave_irq, 0));
++		return IRQ_HANDLED;
++	}
++
+ 	do {
+ 		handle_nested_irq(irq_find_mapping(slave_irq, 0));
+ 		regmap_read(regmap, wcd_intr_status0, &sts1);
