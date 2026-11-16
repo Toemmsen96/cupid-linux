@@ -1,0 +1,27 @@
+From 7205d3943e3019fdebe1d05599190290b6ada717 Mon Sep 17 00:00:00 2001
+From: Jayden Milne <linux@jayd.ml>
+Date: Sat, 31 Oct 2026 16:48:11 -0600
+Subject: [PATCH 15/15] ipa: softisp: Enable the Af algorithm in the
+ uncalibrated tuning file
+
+Now that the software ISP computes focus statistics, enable autofocus
+by default. Cameras without a focus lens get the FocusFoM metadata.
+
+Signed-off-by: Jayden Milne <linux@jayd.ml>
+---
+ src/ipa/softisp/data/uncalibrated.yaml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ipa/softisp/data/uncalibrated.yaml b/src/ipa/softisp/data/uncalibrated.yaml
+index 53d3792..b20ef2d 100644
+--- a/src/ipa/softisp/data/uncalibrated.yaml
++++ b/src/ipa/softisp/data/uncalibrated.yaml
+@@ -4,7 +4,7 @@
+ version: 1
+ algorithms:
+   - BlackLevel:
+-  # - Af:
++  - Af:
+   - Awb:
+   # Color correction matrices can be defined here. The CCM algorithm
+   # has a significant performance impact, and should only be enabled

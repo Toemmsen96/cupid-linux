@@ -814,9 +814,10 @@
 				regulator-max-microvolt = <2800000>;
 			};
 
+			/* telemacro autofocus (stock: 2.808 V) */
 			cam_l4: ldo4 {
 				regulator-name = "pm8008j_l4";
-				regulator-min-microvolt = <1608000>;
+				regulator-min-microvolt = <2808000>;
 				regulator-max-microvolt = <2808000>;
 			};
 
@@ -844,10 +845,11 @@
 				regulator-max-microvolt = <3104000>;
 			};
 
+			/* main camera autofocus (stock cam_vaf: 3.104 V) */
 			cam_l7: ldo7 {
 				regulator-name = "pm8008j_l7";
-				regulator-min-microvolt = <2912000>;
-				regulator-max-microvolt = <3300000>;
+				regulator-min-microvolt = <3104000>;
+				regulator-max-microvolt = <3104000>;
 			};
 		};
 	};
@@ -2164,6 +2166,19 @@
 
 &cci0_i2c1 {
 	/*
+	 * Main camera autofocus: AK7314 voice coil driver (stock CamX
+	 * cupid_semco_imx766_ak7314_wide_actuator, slave 0x18): the AK7375
+	 * register model (position at 0x00, control 0x02: 0x00 active, 0x40
+	 * standby).
+	 */
+	vcm_main: camera-lens@c {
+		compatible = "asahi-kasei,ak7375";
+		reg = <0x0c>;
+		vdd-supply = <&cam_l7>;
+		vio-supply = <&cam_l5>;
+	};
+
+	/*
 	 * Main: Sony IMX766 (stock qcom,cam-sensor0, CamX slave address
 	 * 0x20), three C-PHY trios into CSIPHY2, MCLK2 at 19.2 MHz, reset
 	 * gpio126. Register tables from the stock CamX sensor module. The
@@ -2183,6 +2198,7 @@
 
 		avdd-supply = <&cam_main_avdd>;
 		avdd2-supply = <&cam_l6>;
+		lens-focus = <&vcm_main>;
 		dvdd-supply = <&cam_main_dvdd>;
 		dovdd-supply = <&cam_l5>;
 
@@ -2206,6 +2222,20 @@
 
 &cci1_i2c0 {
 	/*
+	 * Telemacro autofocus: DW9800V (stock CamX
+	 * cupid_sunny_s5k5e9_dw9800v_macro_actuator, slave 0x18), programmed
+	 * like the DW9800K; the stock module ends its init with SAC mode 2
+	 * (0x06 = 0x80) and prescale 5 (0x07 = 0x05).
+	 */
+	vcm_macro: camera-lens@c {
+		compatible = "dongwoon,dw9800k";
+		reg = <0x0c>;
+		vdd-supply = <&cam_l4>;
+		dongwoon,sac-mode = <2>;
+		dongwoon,vcm-prescale = <5>;
+	};
+
+	/*
 	 * Telemacro: Samsung S5K5E9 (stock qcom,cam-sensor3, CamX slave
 	 * address 0x5a), two lanes into CSIPHY1, MCLK3 at 19.2 MHz, reset
 	 * gpio128. Register tables from the stock CamX sensor module.
@@ -2223,6 +2253,7 @@
 		pinctrl-names = "default";
 
 		avdd-supply = <&cam_macro_avdd>;
+		lens-focus = <&vcm_macro>;
 		dvdd-supply = <&cam_l1>;
 		dovdd-supply = <&cam_l5>;
 

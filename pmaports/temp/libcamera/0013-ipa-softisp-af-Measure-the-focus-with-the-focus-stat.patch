@@ -1,0 +1,209 @@
+From dad1c15a00e1c5a4277862023ecd5dbf3e51713a Mon Sep 17 00:00:00 2001
+From: Jayden Milne <linux@jayd.ml>
+Date: Sat, 31 Oct 2026 16:47:29 -0600
+Subject: [PATCH 13/15] ipa: softisp: af: Measure the focus with the focus
+ statistics
+
+Feed the libipa Af algorithm with a focus measurement computed from the
+focus statistics of the software ISP, in place of the variance
+placeholder, which is removed from the statistics.
+
+The measurement covers the centre half of the width and third of the
+height of the statistics window, the default focus area of the Raspberry
+Pi autofocus algorithm. It is the mean squared difference between
+adjacent green values, normalised by the square of the mean level above
+black, so that exposure changes don't look like focus changes. Images
+too dark to measure are skipped.
+
+The software ISP computes statistics for one frame in
+SwStatsCpu::kStatPerNumFrames, and the statistics of the other frames
+carry the values of an earlier frame. Skip them, as the other algorithms
+do: the hill climbing scan would otherwise move the lens on every frame
+and compare each position with a measurement made at an earlier one. In
+a simulation of the scan, with the lens moving two frames after a
+command, it settled 90 to 190 lens steps past the peak, and didn't
+settle at all when the statistics were processed three or four frames
+after the capture, as happens when debayering takes most of the frame
+time. Skipping them, it settled within 20 steps of the peak.
+
+Signed-off-by: Jayden Milne <linux@jayd.ml>
+---
+ .../internal/software_isp/swisp_stats.h       |  6 --
+ src/ipa/softisp/algorithms/af.cpp             | 69 ++++++++++++++++++-
+ src/ipa/softisp/algorithms/af.h               |  5 ++
+ src/libcamera/software_isp/swstats_cpu.cpp    |  3 -
+ 4 files changed, 71 insertions(+), 12 deletions(-)
+
+diff --git a/include/libcamera/internal/software_isp/swisp_stats.h b/include/libcamera/internal/software_isp/swisp_stats.h
+index d1e9205..9c4e0ba 100644
+--- a/include/libcamera/internal/software_isp/swisp_stats.h
++++ b/include/libcamera/internal/software_isp/swisp_stats.h
+@@ -27,8 +27,6 @@ namespace libcamera {
+  * - The histogram groups pixels in bins based on their luminance and counts
+  *   the number of pixels in each bin. Saturated pixels are included.
+  *
+- * - The variance value for autofocus.
+- *
+  * - The focus statistics divide the statistics window in a grid of regions
+  *   and measure the high frequency content of the green channel in each of
+  *   them, for use by contrast detection autofocus algorithms.
+@@ -62,10 +60,6 @@ struct SwIspStats {
+ 	 * \brief A histogram of luminance values of all the sampled pixels
+ 	 */
+ 	Histogram yHistogram;
+-	/**
+-	 * \brief A variance value for the autofocus algorithm
+-	 */
+-	double variance;
+ 	/**
+ 	 * \brief Number of columns in the focus statistics grid
+ 	 */
+diff --git a/src/ipa/softisp/algorithms/af.cpp b/src/ipa/softisp/algorithms/af.cpp
+index 4fb834f..17e61d4 100644
+--- a/src/ipa/softisp/algorithms/af.cpp
++++ b/src/ipa/softisp/algorithms/af.cpp
+@@ -7,6 +7,8 @@
+ 
+ #include "af.h"
+ 
++#include <stdint.h>
++
+ #include <libcamera/base/log.h>
+ 
+ #include <libcamera/control_ids.h>
+@@ -19,6 +21,15 @@ namespace ipa::softisp::algorithms {
+ 
+ LOG_DEFINE_CATEGORY(IPASoftIspAf)
+ 
++/*
++ * Mean level above black, on an 8-bit scale, below which the image is too
++ * dark to measure focus.
++ */
++static constexpr double kMinLevel = 4.0;
++
++/* Scale applied to the normalised contrast, so that the values are readable. */
++static constexpr double kContrastScale = 1e6;
++
+ int Af::init(IPAContext &context, [[maybe_unused]] const ValueNode &tuningData)
+ {
+ 	/* Informs that lens controls can get focus data */
+@@ -34,15 +45,67 @@ int Af::configure(IPAContext &context, const IPAConfigInfo &configInfo)
+ 	return 0;
+ }
+ 
++/*
++ * Measure the focus in the centre half of the width and third of the height
++ * of the statistics window: the mean squared difference between adjacent
++ * green values, normalised by the square of the mean level above black so
++ * that the measurement doesn't depend on the exposure.
++ */
++std::optional<double> Af::measureFocus(const IPAContext &context,
++				       const SwIspStats *stats)
++{
++	constexpr unsigned int kLeft = SwIspStats::kFocusGridWidth / 4;
++	constexpr unsigned int kRight = SwIspStats::kFocusGridWidth - kLeft;
++	constexpr unsigned int kTop = SwIspStats::kFocusGridHeight / 3;
++	constexpr unsigned int kBottom = SwIspStats::kFocusGridHeight - kTop;
++
++	uint64_t contrast = 0;
++	uint64_t sum = 0;
++	uint64_t count = 0;
++
++	for (unsigned int y = kTop; y < kBottom; y++) {
++		for (unsigned int x = kLeft; x < kRight; x++) {
++			const SwIspStats::FocusRegion &region =
++				stats->focus[y * SwIspStats::kFocusGridWidth + x];
++
++			contrast += region.contrast;
++			sum += region.sum;
++			count += region.count;
++		}
++	}
++
++	if (!count)
++		return std::nullopt;
++
++	const double level = static_cast<double>(sum) / count -
++			     context.activeState.blc.level;
++	if (level < kMinLevel)
++		return std::nullopt;
++
++	return kContrastScale * contrast / count / (level * level);
++}
++
+ void Af::process(IPAContext &context,
+ 		 [[maybe_unused]] const uint32_t frame,
+ 		 [[maybe_unused]] IPAFrameContext &frameContext,
+ 		 const SwIspStats *stats,
+ 		 [[maybe_unused]] ControlList &metadata)
+ {
+-	const double variance = stats->variance;
+-	LOG(IPASoftIspAf, Debug) << "Focus stats: " << variance;
+-	afAlgo_.process(context.activeState.af, variance);
++	/*
++	 * The statistics are only computed for some frames, the others carry
++	 * the values of an earlier frame.
++	 */
++	if (!stats->valid)
++		return;
++
++	std::optional<double> focus = measureFocus(context, stats);
++	if (!focus) {
++		LOG(IPASoftIspAf, Debug) << "Image too dark to measure focus";
++		return;
++	}
++
++	LOG(IPASoftIspAf, Debug) << "Focus measure: " << *focus;
++	afAlgo_.process(context.activeState.af, *focus);
+ }
+ 
+ REGISTER_IPA_ALGORITHM(Af, "Af")
+diff --git a/src/ipa/softisp/algorithms/af.h b/src/ipa/softisp/algorithms/af.h
+index 881cb44..fe52293 100644
+--- a/src/ipa/softisp/algorithms/af.h
++++ b/src/ipa/softisp/algorithms/af.h
+@@ -7,6 +7,8 @@
+ 
+ #pragma once
+ 
++#include <optional>
++
+ #include "libipa/af.h"
+ 
+ #include "algorithm.h"
+@@ -31,6 +33,9 @@ public:
+ 		     ControlList &metadata) override;
+ 
+ private:
++	static std::optional<double> measureFocus(const IPAContext &context,
++						  const SwIspStats *stats);
++
+ 	AfAlgorithm afAlgo_;
+ };
+ 
+diff --git a/src/libcamera/software_isp/swstats_cpu.cpp b/src/libcamera/software_isp/swstats_cpu.cpp
+index 993b003..580ed1e 100644
+--- a/src/libcamera/software_isp/swstats_cpu.cpp
++++ b/src/libcamera/software_isp/swstats_cpu.cpp
+@@ -501,7 +501,6 @@ void SwStatsCpu::startFrame(uint32_t frame)
+ 	for (auto &s : stats_) {
+ 		s.sum_ = RGB<uint64_t>({ 0, 0, 0 });
+ 		s.numPixels_ = 0;
+-		s.variance = 0.0;
+ 		s.yHistogram.fill(0);
+ 		s.focus.fill({});
+ 	}
+@@ -521,13 +520,11 @@ void SwStatsCpu::finishFrame(uint32_t frame, uint32_t bufferId)
+ 	if (valid) {
+ 		sharedStats_->sum_ = RGB<uint64_t>({ 0, 0, 0 });
+ 		sharedStats_->numPixels_ = 0;
+-		sharedStats_->variance = 0.0;
+ 		sharedStats_->yHistogram.fill(0);
+ 		sharedStats_->focus.fill({});
+ 		for (const auto &s : stats_) {
+ 			sharedStats_->sum_ += s.sum_;
+ 			sharedStats_->numPixels_ += s.numPixels_;
+-			sharedStats_->variance += s.variance;
+ 			for (unsigned int j = 0; j < SwIspStats::kYHistogramSize; j++)
+ 				sharedStats_->yHistogram[j] += s.yHistogram[j];
+ 			for (unsigned int j = 0; j < s.focus.size(); j++) {

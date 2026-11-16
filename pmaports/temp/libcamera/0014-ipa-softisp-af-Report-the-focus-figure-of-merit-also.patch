@@ -1,0 +1,95 @@
+From af3a5ae12d4c8b2cb49db3a1575c3680787cad8f Mon Sep 17 00:00:00 2001
+From: Jayden Milne <linux@jayd.ml>
+Date: Sat, 31 Oct 2026 16:48:11 -0600
+Subject: [PATCH 14/15] ipa: softisp: af: Report the focus figure of merit,
+ also without a lens
+
+Report the focus measurement as FocusFoM. Without a focus lens, the Af
+algorithm now only does that, which still helps when focusing a lens by
+hand, instead of sending lens controls that the camera doesn't have:
+whether the lens can be driven is decided at configure time from the
+lens controls.
+
+Signed-off-by: Jayden Milne <linux@jayd.ml>
+---
+ src/ipa/softisp/algorithms/af.cpp | 29 +++++++++++++++++++----------
+ src/ipa/softisp/algorithms/af.h   |  1 -
+ 2 files changed, 19 insertions(+), 11 deletions(-)
+
+diff --git a/src/ipa/softisp/algorithms/af.cpp b/src/ipa/softisp/algorithms/af.cpp
+index 17e61d4..83eb545 100644
+--- a/src/ipa/softisp/algorithms/af.cpp
++++ b/src/ipa/softisp/algorithms/af.cpp
+@@ -7,8 +7,13 @@
+ 
+ #include "af.h"
+ 
++#include <algorithm>
++#include <cmath>
++#include <limits>
+ #include <stdint.h>
+ 
++#include <linux/v4l2-controls.h>
++
+ #include <libcamera/base/log.h>
+ 
+ #include <libcamera/control_ids.h>
+@@ -30,16 +35,14 @@ static constexpr double kMinLevel = 4.0;
+ /* Scale applied to the normalised contrast, so that the values are readable. */
+ static constexpr double kContrastScale = 1e6;
+ 
+-int Af::init(IPAContext &context, [[maybe_unused]] const ValueNode &tuningData)
+-{
+-	/* Informs that lens controls can get focus data */
+-	context.afEnabled = true;
+-
+-	return 0;
+-}
+-
+ int Af::configure(IPAContext &context, const IPAConfigInfo &configInfo)
+ {
++	/*
++	 * Without a focus lens, only report how sharp the frames are, which
++	 * still helps to focus a lens by hand.
++	 */
++	context.afEnabled = configInfo.lensControls.count(V4L2_CID_FOCUS_ABSOLUTE);
++
+ 	afAlgo_.configure(context.activeState.af, configInfo.lensControls);
+ 
+ 	return 0;
+@@ -89,7 +92,7 @@ void Af::process(IPAContext &context,
+ 		 [[maybe_unused]] const uint32_t frame,
+ 		 [[maybe_unused]] IPAFrameContext &frameContext,
+ 		 const SwIspStats *stats,
+-		 [[maybe_unused]] ControlList &metadata)
++		 ControlList &metadata)
+ {
+ 	/*
+ 	 * The statistics are only computed for some frames, the others carry
+@@ -105,7 +108,13 @@ void Af::process(IPAContext &context,
+ 	}
+ 
+ 	LOG(IPASoftIspAf, Debug) << "Focus measure: " << *focus;
+-	afAlgo_.process(context.activeState.af, *focus);
++
++	constexpr double kMaxFoM = std::numeric_limits<int32_t>::max();
++	metadata.set(controls::FocusFoM,
++		     static_cast<int32_t>(std::min(std::round(*focus), kMaxFoM)));
++
++	if (context.afEnabled)
++		afAlgo_.process(context.activeState.af, *focus);
+ }
+ 
+ REGISTER_IPA_ALGORITHM(Af, "Af")
+diff --git a/src/ipa/softisp/algorithms/af.h b/src/ipa/softisp/algorithms/af.h
+index fe52293..c17d00d 100644
+--- a/src/ipa/softisp/algorithms/af.h
++++ b/src/ipa/softisp/algorithms/af.h
+@@ -24,7 +24,6 @@ public:
+ 	Af() = default;
+ 	~Af() = default;
+ 
+-	int init(IPAContext &context, const ValueNode &tuningData) override;
+ 	int configure(IPAContext &context,
+ 		      const IPAConfigInfo &configInfo) override;
+ 	void process(IPAContext &context, const uint32_t frame,

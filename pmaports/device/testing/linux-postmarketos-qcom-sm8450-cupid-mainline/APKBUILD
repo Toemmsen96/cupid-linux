@@ -31,7 +31,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=11
+pkgrel=12
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -133,8 +133,8 @@ package() {
 
 sha512sums="
 db5508c3cf8b613b4680022eb785c036bcf8a5c952f8d0b2f3c2c7dc16779cf8bd954e0bca0b0b52451bac61430a687ae73205574f002f3b60de886640ebb9b0  linux-7.3.4.tar.xz
-9b9584c2b4b2afb4744aa27d8eb909bcc95ec667a4b903243de91d32869671d3b973c0d0f6848d3509cf65bbb5b55033e3a85a57beda557bc1015694c4e05747  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
-ae34338a1fbb915b77bd12565643a16d36c023b7bdb749f0e091907633d825dcfac28267af935a1f3b993d4ad4b801bd5e5da3e818850573c0a236bd5e54a514  sm8450-xiaomi-cupid.dts
+85235b58dd7931563fed8fc9a8862531fb9e44548edb7d7d869811d483bd2ae0df08231870a34cbdfe26065108bc53c2471fe494244a213c2f4d72b941cfb387  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
+9014979eb58731962b5c2db68e07c2545c7f12dd796147bfa930d1b4da58db2ec8a6496bccc84c292fcc01e42735cef5482d94445d1a5cdcb74946d168b09c29  sm8450-xiaomi-cupid.dts
 f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd5d905d95de266a54eeb5ab88bd2924cd7e5878dbd4224096  fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
 05f0f5ffa8e5b42052f0ba05a99a463f857ba5c1283b45761cb2917ab6e7fd6d38a4ba7bc40578d7816bb020e2ff27083577c9fd89b454d1854bb32349beba8f  fork-0002-input-touchscreen-add-fts_spi-driver.patch
 258b8914f95d863dd6a58f73e153c0c805edc103e324c55439fd1d4c930fccc1e434c5a32a9ba50c06f44b2f5cbe1c5b7600744804efb8b1be2eb8e0f79f7e10  fork-0003-arm64-dts-qcom-sm8450-add-clock-names-to-mdss.patch

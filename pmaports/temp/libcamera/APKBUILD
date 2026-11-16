@@ -1,11 +1,14 @@
 # Forked from Alpine for temporary downstream patches
 # cupid-linux: postmarketOS temp/libcamera (pmaports main, 2026-11-16) plus
-# 0003, sensor helpers/properties for the Xiaomi 12 cameras (pkgrel 2).
+# 0003, sensor helpers/properties for the Xiaomi 12 cameras (pkgrel 2), and
+# 0004-0015, software ISP autofocus: Milan Zamazal's "Autofocus basics for
+# software ISP" v2 plus focus statistics, as in
+# github.com/jaydens-tasty-slop/libcamera gts3/af-stats (pkgrel 3).
 maintainer="Robert Mader <robert.mader@collabora.com>"
 pkgname=libcamera
 _pkgver=0.8.0
 pkgver=9999$_pkgver
-pkgrel=2
+pkgrel=3
 pkgdesc="Linux camera framework"
 url="https://libcamera.org/"
 arch="all"
@@ -64,6 +67,18 @@ source="https://gitlab.freedesktop.org/camera/libcamera/-/archive/v$_pkgver/libc
 	0001-libcamera-software_isp-Allow-limiting-output-sizes.patch
 	0002-libcamera-Add-quad-Bayer-CFA-layout-support.patch
 	0003-libcamera-add-the-xiaomi-12-camera-sensors.patch
+	0004-libcamera-software_isp-Let-a-single-point-decide-abo.patch
+	0005-ipa-ipu3-Move-non-specific-parts-of-Af-to-libipa.patch
+	0006-ipa-libipa-Add-af-prepareControls.patch
+	0007-libcamera-software_isp-Add-variance-to-stats.patch
+	0008-ipa-softisp-Remove-unused-imports-from-ipa_context.h.patch
+	0009-ipa-softisp-Add-Af-algorithm.patch
+	0010-libcamera-software_isp-Add-autofocus-controls.patch
+	0011-ipa-libipa-Use-autofocus-limits-if-available.patch
+	0012-libcamera-software_isp-Gather-focus-statistics.patch
+	0013-ipa-softisp-af-Measure-the-focus-with-the-focus-stat.patch
+	0014-ipa-softisp-af-Report-the-focus-figure-of-merit-also.patch
+	0015-ipa-softisp-Enable-the-Af-algorithm-in-the-uncalibra.patch
 	qcam.desktop
 	$_tuning_files
 	"
@@ -173,6 +188,18 @@ sha512sums="
 e255545cdc1d3d0e68fd40c504d2c2a24ec9a89de9e26842e05cc6046cf79615be87b0b9f80a3637b1f130c0404ff5e0f7df5136334b05c1d4e24e3290738223  0001-libcamera-software_isp-Allow-limiting-output-sizes.patch
 7918e3e2eed6ea6413936c30c88b752ba7c2da568c75236b2f5740e311b7b16fc6b4cc21413f4751af252843d0b98ad45ca41033e65686a9e9cdfa8d05f467c2  0002-libcamera-Add-quad-Bayer-CFA-layout-support.patch
 6d4c78abd89b38758c2e5012a445599fa37568956750f5287e0c79402cdf6108b1b455a1136de04df65fd2d6d924ae140ed77632a8a55533c5f7eb981aca5ea4  0003-libcamera-add-the-xiaomi-12-camera-sensors.patch
+f4c0a580cd378d92e778a39de48ebbd45959ccfe73d6208ba5c5fb2ca938fd93a38d9e3a8da1db3e3575723ea514ff11106cc939dcd5ad167afb2c370929629f  0004-libcamera-software_isp-Let-a-single-point-decide-abo.patch
+4a394ad635894173156dc7debba0fdc02f37a6e142275b0ea0ea028382c3aa4e3e8082e1531ad3aa55a022bf1ff38c09efec955aad78c17604795d102fe2c64c  0005-ipa-ipu3-Move-non-specific-parts-of-Af-to-libipa.patch
+ceec6e0b091ff4e45748d9a4d5bfee50f5fdc3a38b2df352efd2bfb30593141b17df11f759f8ca27baee7c85c8b1c10fffbaf8102c50e8ee714671f041448433  0006-ipa-libipa-Add-af-prepareControls.patch
+b11861daba98c1705dbcab815721623673ed6ffcf0466bd4af2cf9286fa26fcbe9856a1e808917c07aefd068e6f33452b2257b900a699ccbd60d7285f18f9247  0007-libcamera-software_isp-Add-variance-to-stats.patch
+365e5878d7b904ba56bf20d98595c761d6cde75cfd9a82dd7bb2b5d879988fb2ec091daffe532eecaccad9f7136b20feb3b996e04a36f19af3861588f5421833  0008-ipa-softisp-Remove-unused-imports-from-ipa_context.h.patch
+49e3fc7f38cf01a29adcb165bc683efd1d047da1e31d84367aef7865136d2b19cf051336d4a868c6c05386d013e54547268fa0554a3427fe21d0d0b089376b38  0009-ipa-softisp-Add-Af-algorithm.patch
+34b832b39bf3fb7c82e3924e48c99ebf7705179a478dac0e0ed8f642de0b7a03f86bdc88ee43bac89a8d1ee87c2479a25f94622a4159c36c63a7fd9c22aaab20  0010-libcamera-software_isp-Add-autofocus-controls.patch
+0a38309ad252484a37c5ae4adb8250688c78bac8660896b7c286ea72a7cfd8e128da0b65fb50b96497277f149fc9868d9ee55728d73c2317bd2f728716373533  0011-ipa-libipa-Use-autofocus-limits-if-available.patch
+2a70df27a66bc706b0d55bf241179984c82dd08026539a164c969b90d2b71350247e3aabb4558a134f7e8cd2cce16a4055e42bc52d0a3a22b54b6591abf775c5  0012-libcamera-software_isp-Gather-focus-statistics.patch
+22f73d12823dae73d5638185bfe5761b33bbfed2c86b82efafe77a03e8a29452952b2b5ae6c584589738f9298e9edb290e88ad193a9d9967b6cc06e317e5f1b4  0013-ipa-softisp-af-Measure-the-focus-with-the-focus-stat.patch
+cdca18f5353a6dc7822ae5f5deacbbbf59046770b19acf708557e0557c0d055c3f4f6e64e27b40ebb7d5ff2eec4626663541fa9d43ff86e73db88fd98f593d4a  0014-ipa-softisp-af-Report-the-focus-figure-of-merit-also.patch
+6326552bf2114d0b5770db2afbd7aa12f909ab78e7beebf991806a6167dff5662ced7a380edb2b42ae01387272b8d3863c45e537784581a0f62e6c72890b4fd3  0015-ipa-softisp-Enable-the-Af-algorithm-in-the-uncalibra.patch
 22167a4eceb6d1b40b0b7c45fdf116c71684f5340de7f767535cb8e160ad9d2ae0f00cb3d461f73a344520a48a4641cf46226841d78bee06bfbfd2a91337f754  qcam.desktop
 926933ed5aa6bc005471d8ddbbf49afaeb5034ac776c78bcba6655adc05b68be858923aac7887f8a8451a424113ed4d11c78856229a728abf031ebe747684e14  hi846.yaml
 4942edd551dcf51630246f71e600c17760d3574d5d45e5530d6cfeefe2c9ab1a812fbe220f8e89d92e19a499c592b2507c801ca4eb74cd15fcecb60bff5c650b  imx355.yaml
