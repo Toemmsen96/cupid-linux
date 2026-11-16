@@ -306,8 +306,33 @@ libcamera has no sensor helpers for these sensors, so auto exposure treats
 the gain codes as linear and images stay dark. `pmaports/temp/libcamera`
 (postmarketOS' libcamera 0.8.0 plus 0003) adds helpers (gain model, black
 level) and sensor properties for all four; `scripts/sync.sh` puts it over
-the pmaports one. Colour tuning (CCM), autofocus (VCM drivers) and OIS are
-not done.
+the pmaports one. OIS is not done.
+
+Autofocus (pkgrel 3/4) is the pending software-ISP AF series (Milan
+Zamazal's v2 plus focus statistics) on the AK7375 (main) and DW9800K
+(macro) lens drivers; it sweeps and settles but needs texture to lock.
+
+Colour and lens shading tuning (pkgrel 6): `ov32b40.yaml`, `imx766.yaml` and
+`s5k5e9.yaml` carry the stock Chromatix colour matrices (cc13, per CCT
+region of the normal-light trigger) and lens shading tables (lsc41,
+17x13 resampled to libcamera's 17x17). `scripts/camx-tuning.py` regenerates
+them from `vendor/lib64/camera/com.qti.tuned.cupid_*.bin`. Things learned:
+
+- Chromatix payloads are shared between regions; resolve each region's data
+  symbol through the symbol table instead of counting tables in order.
+- libcamera's tabular Lsc values are already-quantised UQ<2,6> integers
+  (64 = 1.0, max 255 = 3.98); floats truncate and darken the image ~6x.
+- The software ISP takes AWB statistics before shading correction, so a
+  table whose average R or B gain differs from G tints the whole frame
+  (up to 13 % here). The generator scales R and B to cancel that.
+- The macro's 2600-3100 K table over-corrects this unit (corners at ~160 %);
+  the stock pipeline likely uses the module's OTP shading instead. Only the
+  4000 and 6500 K tables are used.
+
+Measured corner/centre brightness on a ceiling: main 0.56 to 1.00, macro
+0.81 to 0.94, front 0.5 to 0.95. The IMX766 corners need more than the
+3.98 maximum gain and stay slightly under-corrected in the extreme corners.
+AWB is still grey world with a generic CCT estimate (no `colourGains`).
 
 ## Kernel patches carried
 
