@@ -42,7 +42,7 @@ First booted 2026-11-16 (kernel 7.3.4), installed over the 6.17 rootfs with
 
 | Works | Not yet re-checked |
 |---|---|
-| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe), front, macro and main camera streaming (OV32B40 pkgrel 3, S5K5E9 pkgrel 4, IMX766 pkgrel 5), speakers (pkgrel 7) | mobile data, audio output, sensors, ultra-wide streaming, the battery current sign (reads negative while charging) |
+| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe), front, macro and main camera streaming (OV32B40 pkgrel 3, S5K5E9 pkgrel 4, IMX766 pkgrel 5), speakers (pkgrel 7; distorted again since the evening of 2026-11-16, see [Speakers](#speakers-73)) | mobile data, audio output, sensors, ultra-wide streaming, the battery current sign (reads negative while charging) |
 
 WiFi needed an upstream fix (0027): the qcom PCIe driver read `iommu-map`
 as 4-cell entries while sm8450.dtsi uses 5 (`#iommu-cells = <2>`), so the
@@ -104,6 +104,28 @@ Left to try:
   rebuild.
 
 ## Speakers (7.3)
+
+**Regression, open (2026-11-16 evening):** the speakers play a full-level
+square wave of the signal's sign: any non-zero sample, even 1 LSB, comes out
+at full scale, so the volume has no effect; digital silence stays silent.
+They measured clean around 19:00 the same day (kernel r11, harmonics 40-60 dB
+down, volume scaling). Now kernel r11 and r13 are both broken, as are a cold
+boot and a rebind of the card and both amplifiers, although every sound
+module (byte-identical r11/r13), the topology and the UCM profile are
+unchanged. Checked and correct: the media formats the kernel sends the DSP
+(traced with a kprobe on `audioreach_set_media_format`: 96 kHz, 24 bit, 2
+channels, 4x32-bit slots, L/R channel map), the TDM bit clock (12.288 MHz),
+both amplifiers' serial port setup. The stock Xiaomi configuration (Forte
+ACDB `PARAM_ID_TDM_INTF_CFG` and HW_EP media format, `backend_conf.xml`,
+`mixer_paths_overlay_static.xml`) matches our framing (internal short sync,
+one bit data delay, 4x32 slots, 96 kHz 24 bit); stock differs in a third
+slot (slot mask 7), the amplifiers' own protection DSP as PCM source,
+analog gain 18 and a top speaker switch GPIO (52). The amplifiers' first
+power-up after boot always times out (`Enable(1) failed: -110`). The
+earlier "32-bit overflow" diagnosis behind the S24 change rested on a live
+word-length test that could not work (the amplifiers latch their format at
+power-up), so that change may have coincided with, not caused, the clean
+state.
 
 Two CS35L41 amplifiers on the tertiary TDM interface: top at 0x42 (slot 0,
 "SpkrLeft"), bottom at 0x40 (slot 1, "SpkrRight"). The SM8450 ADSP firmware
