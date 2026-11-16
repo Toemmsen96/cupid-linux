@@ -55,6 +55,30 @@ For the kernel config: `scripts/pmb kconfig edit linux-postmarketos-qcom-sm8450-
 opens menuconfig in the chroot and writes the result back into
 `work/pmaports/`; copy the file back into this repository afterwards.
 
+## Test images: WiFi, sudo and SSH host key baked in
+
+Every flash otherwise starts from zero: WiFi has to be set up by hand, sudo
+asks for the password, and the SSH host key changes. For test builds keep
+those in a private overlay:
+
+```sh
+scripts/local-pull.sh user@phone   # from a running phone, once
+scripts/build.sh                          # injects local/rootfs/ into the image
+```
+
+`local-pull.sh` copies the phone's NetworkManager connections (with their
+WiFi passwords; system connections come up at boot, before anyone logs in)
+and its SSH host keys into `local/rootfs/`, and writes a NOPASSWD sudo rule
+for the image's user. Anything else placed under `local/rootfs/` is copied
+too, owned by root with the file's own mode. `build.sh` injects it after
+`pmbootstrap export` with `scripts/inject-local.sh` (debugfs on the image
+file, no root needed); `scripts/inject-local.sh` alone redoes it on an
+existing `out/xiaomi-cupid.img`. `CUPID_NO_LOCAL=1 scripts/build.sh` builds a
+clean image.
+
+`local/` is gitignored and holds secrets: do not commit, upload or share
+images built with it.
+
 ## Why --single-partition
 
 A fastboot device boots `boot.img` from the boot partition; the root

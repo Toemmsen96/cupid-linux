@@ -8,6 +8,9 @@
 #
 # Environment: see scripts/env.sh. CUPID_PASSWORD sets the user password in the
 # image (default <password>, change it with passwd after the first login).
+# If local/rootfs/ exists (scripts/local-pull.sh), its files go into the image:
+# WiFi, passwordless sudo and SSH host keys for testing. CUPID_NO_LOCAL=1
+# skips that.
 set -e
 . "$(dirname "$0")/env.sh"
 
@@ -56,7 +59,17 @@ pmb install --single-partition --password "${CUPID_PASSWORD:-<password>}"
 
 echo "==> exporting to $OUT"
 mkdir -p "$OUT"
+# A previous run's local overlay left a regular file where export puts its
+# symlink.
+[ -L "$OUT/xiaomi-cupid.img" ] || rm -f "$OUT/xiaomi-cupid.img"
 pmb export "$OUT"
+
+# Private test settings (WiFi, passwordless sudo, SSH host keys) from local/,
+# see scripts/local-pull.sh. CUPID_NO_LOCAL=1 builds a clean image.
+if [ -z "$CUPID_NO_LOCAL" ]; then
+	echo "==> local overlay"
+	"$REPO/scripts/inject-local.sh"
+fi
 
 # The image must be a cleanly unmounted filesystem. A process that creates a
 # new mount namespace while pmbootstrap has the image mounted (a Steam game's
