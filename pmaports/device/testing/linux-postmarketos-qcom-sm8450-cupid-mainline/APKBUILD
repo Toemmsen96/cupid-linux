@@ -31,7 +31,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=6
+pkgrel=7
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -163,6 +163,6 @@ ef2d5ed97a165eb488e503de9d59225956cd183f9a184bf26073dfbb13db8c08eeb03f45c20748b8
 39e01530b4544e7c377363c658aba82be30c5140aca890fd73632b9c173661c98ec0433c231a070c0652ef8966f024e877543c61cbf3ea8f31007540717d2422  0032-media-i2c-add-a-sony-imx766-driver.patch
 99faf19411816309304e52eb59e5a8c00584615d25a2da8c359251f2c5a960ac0141162c8006f9c87dbd225ece2aad0eaccd806126f59efbefc6619b667c4d2a  0033-asoc-qcom-audioreach-legacy-tdm-modules.patch
 3fb70150a762cec876fad66e3863ef75d1509f43b231c0e4913af547127448c5b61db008c77c4ade48fac3879fa78970ed9c7ba9b5a1ad2c628d831ac0e0db38  0034-asoc-qcom-q6dsp-advertise-96-khz-tdm-playback.patch
-9c4c1d816eab4389cb56fb7ffe081bc9b69784268b04cc260a7c59f2ac76cf7414bc9bdeaf09438e1aba7f5366ecfeb96506ebe74034613f965e13ed3222a545  0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
+8c8338aa1f847ad6d51ecfa6472ea177062c2719d3518cdc3665fafa32c440bb8f0e915c7de0f33eba0e130f40c6fc8a754c70150e35c50ec75a27cf35817dda  0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
 69a437fb63792d8d2baef74a4a7b394fadaa767c8cef74dc0b52c4b831d88aa100e26c504046acd14fd3a1bcd899cf731a6db1bbd45008dc7b63017b554759a1  0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
 "

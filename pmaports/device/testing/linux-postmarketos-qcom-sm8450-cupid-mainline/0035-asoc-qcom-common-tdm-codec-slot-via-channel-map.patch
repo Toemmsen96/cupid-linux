@@ -6,19 +6,21 @@ Subject: [PATCH] ASoC: qcom: common: give TDM codecs without set_tdm_slot
 
 Speaker amplifiers like the CS35L41 have no set_tdm_slot operation; they
 take their slot through set_channel_map. When a TDM link applies its
-dai-tdm-slot layout, a codec DAI that returns -ENOTSUPP failed the whole
-hw_params. Fall back to the channel map instead: the n-th codec DAI of the
-link gets the n-th active slot of the link's mask, one slot each way, so
-two amplifiers on one link with dai-tdm-slot-rx-mask = <1 1 0 0> play
-slots 0 and 1.
+dai-tdm-slot layout to such a codec DAI, snd_soc_dai_set_tdm_slot() only
+translates the masks and returns 0, so every amplifier stays on its reset
+slot (slot 0 on the CS35L41) and plays the same channel. Use the channel
+map for codec DAIs without the operation: the n-th codec DAI of the link
+gets the n-th active slot of the link's mask, one slot each way, so two
+amplifiers on one link with dai-tdm-slot-rx-mask = <1 1 0 0> play slots 0
+and 1.
 
 Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
 ---
- sound/soc/qcom/common.c | 29 +++++++++++++++++++++++++++++
- 1 file changed, 29 insertions(+)
+ sound/soc/qcom/common.c | 45 ++++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 40 insertions(+), 5 deletions(-)
 
 diff --git a/sound/soc/qcom/common.c b/sound/soc/qcom/common.c
-index d9f256d51..260b9b319 100644
+index d9f256d51..25144a9c0 100644
 --- a/sound/soc/qcom/common.c
 +++ b/sound/soc/qcom/common.c
 @@ -3,6 +3,7 @@
@@ -62,12 +64,28 @@ index d9f256d51..260b9b319 100644
  int qcom_snd_apply_dai_tdm_slots_cfg(struct snd_soc_pcm_runtime *rtd,
  				     const struct qcom_snd_tdm_slot_cfg *cpu_cfg,
  				     const struct qcom_snd_tdm_slot_cfg *codec_cfg)
-@@ -156,6 +183,8 @@ int qcom_snd_apply_dai_tdm_slots_cfg(struct snd_soc_pcm_runtime *rtd,
- 					       codec_cfg->rx_mask,
- 					       codec_cfg->slots,
- 					       codec_cfg->slot_width);
-+		if (ret == -ENOTSUPP)
+@@ -151,11 +178,19 @@ int qcom_snd_apply_dai_tdm_slots_cfg(struct snd_soc_pcm_runtime *rtd,
+ 		return ret;
+ 
+ 	for_each_rtd_codec_dais(rtd, i, codec_dai) {
+-		ret = snd_soc_dai_set_tdm_slot(codec_dai,
+-					       codec_cfg->tx_mask,
+-					       codec_cfg->rx_mask,
+-					       codec_cfg->slots,
+-					       codec_cfg->slot_width);
++		/*
++		 * snd_soc_dai_set_tdm_slot() returns 0 for a DAI without the
++		 * operation (only the slot mask translation runs), so check
++		 * for it here.
++		 */
++		if (!codec_dai->driver->ops || !codec_dai->driver->ops->set_tdm_slot)
 +			ret = qcom_snd_set_codec_slot(codec_dai, i, codec_cfg);
++		else
++			ret = snd_soc_dai_set_tdm_slot(codec_dai,
++						       codec_cfg->tx_mask,
++						       codec_cfg->rx_mask,
++						       codec_cfg->slots,
++						       codec_cfg->slot_width);
  		if (ret)
  			return ret;
  	}
