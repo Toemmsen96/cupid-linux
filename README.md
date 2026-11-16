@@ -42,7 +42,7 @@ First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on
 
 | Works (7.3) | Partial / open | Not working |
 |---|---|---|
-| boot, USB networking + SSH, storage, display (120 Hz, no corruption on 7.3), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery, USB-PD charging (~17 W), mobile data (LTE/5G), SMS, VoLTE calls (connect both ways), GPS (standalone), all four cameras in apps (libcamera software ISP, autofocus, stock colour/shading tuning), camera flash, accelerometer, light sensor, compass, auto-rotation, haptics, USB-C headphones, zram swap | internal speakers (worked, distorted again since 2026-11-16, open); call audio (calls connect silently); SMS received at the login screen land in the greeter's Chatty; main camera streaks while the lens is powered; no proximity (stock uses ultrasound) | fingerprint (TrustZone only); fast charging (vendor charge pumps); OIS; NFC, IR, USB OTG and FDE untested |
+| boot, USB networking + SSH, storage, display (120 Hz, no corruption on 7.3), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery, USB-PD charging (~17 W), mobile data (LTE/5G), SMS, VoLTE calls (connect both ways), GPS (standalone), all four cameras in apps (libcamera software ISP, autofocus, stock colour/shading tuning), camera flash, accelerometer, light sensor, compass, auto-rotation, haptics, USB-C headphones, zram swap | internal speakers (worked, distorted again since 2026-11-16, open); call audio (calls connect silently); SMS received at the login screen land in the greeter's Chatty; main camera streaks while the lens is powered; no proximity (stock uses ultrasound) | fingerprint (TrustZone app; feasible with QTEE, see docs/08-fingerprint.md); fast charging (vendor charge pumps); OIS; NFC, IR, USB OTG and FDE untested |
 
 The details, measurements and what was ruled out are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md); fixes for problems
@@ -78,7 +78,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Phosh | Display scale 2, punch-hole cutout definition for gmobile. | device package `-phosh` |
 | Firmware | Fetched from GitHub instead of git.mainlining.org (which has been returning 502); the modem blob is included in GitHub's archive despite being in LFS. | `firmware-xiaomi-cupid` |
 
-Not addressed yet: fingerprint (TrustZone), FM, fast charging (vendor
+Not addressed yet: fingerprint (plan in [docs/08-fingerprint.md](docs/08-fingerprint.md)), FM, fast charging (vendor
 charge pumps; expect USB-PD rates), OIS, proximity (ultrasound through the
 audio DSP), call audio. Open investigations: the speaker regression on 7.3
 and the display corruption on the 6.13/6.17 kernels. Details per component
