@@ -3,12 +3,13 @@
 # 0003, sensor helpers/properties for the Xiaomi 12 cameras (pkgrel 2), and
 # 0004-0015, software ISP autofocus: Milan Zamazal's "Autofocus basics for
 # software ISP" v2 plus focus statistics, as in
-# github.com/jaydens-tasty-slop/libcamera gts3/af-stats (pkgrel 3).
+# github.com/jaydens-tasty-slop/libcamera gts3/af-stats (pkgrel 3);
+# 0016 scales the AF search steps to the lens range (12-bit VCM, pkgrel 4).
 maintainer="Robert Mader <robert.mader@collabora.com>"
 pkgname=libcamera
 _pkgver=0.8.0
 pkgver=9999$_pkgver
-pkgrel=3
+pkgrel=4
 pkgdesc="Linux camera framework"
 url="https://libcamera.org/"
 arch="all"
@@ -79,6 +80,7 @@ source="https://gitlab.freedesktop.org/camera/libcamera/-/archive/v$_pkgver/libc
 	0013-ipa-softisp-af-Measure-the-focus-with-the-focus-stat.patch
 	0014-ipa-softisp-af-Report-the-focus-figure-of-merit-also.patch
 	0015-ipa-softisp-Enable-the-Af-algorithm-in-the-uncalibra.patch
+	0016-ipa-libipa-af-scale-the-search-steps-to-the-lens-range.patch
 	qcam.desktop
 	$_tuning_files
 	"
@@ -200,6 +202,7 @@ b11861daba98c1705dbcab815721623673ed6ffcf0466bd4af2cf9286fa26fcbe9856a1e808917c0
 22f73d12823dae73d5638185bfe5761b33bbfed2c86b82efafe77a03e8a29452952b2b5ae6c584589738f9298e9edb290e88ad193a9d9967b6cc06e317e5f1b4  0013-ipa-softisp-af-Measure-the-focus-with-the-focus-stat.patch
 cdca18f5353a6dc7822ae5f5deacbbbf59046770b19acf708557e0557c0d055c3f4f6e64e27b40ebb7d5ff2eec4626663541fa9d43ff86e73db88fd98f593d4a  0014-ipa-softisp-af-Report-the-focus-figure-of-merit-also.patch
 6326552bf2114d0b5770db2afbd7aa12f909ab78e7beebf991806a6167dff5662ced7a380edb2b42ae01387272b8d3863c45e537784581a0f62e6c72890b4fd3  0015-ipa-softisp-Enable-the-Af-algorithm-in-the-uncalibra.patch
+a392c12cd1214764fa840f61a88a9104a5835f59b2fd4589d8303bc0158de768a87b3d26cbdbe3435e0c90a1a55f403190c3c2f19e1020d3304422a2e0829d9f  0016-ipa-libipa-af-scale-the-search-steps-to-the-lens-range.patch
 22167a4eceb6d1b40b0b7c45fdf116c71684f5340de7f767535cb8e160ad9d2ae0f00cb3d461f73a344520a48a4641cf46226841d78bee06bfbfd2a91337f754  qcam.desktop
 926933ed5aa6bc005471d8ddbbf49afaeb5034ac776c78bcba6655adc05b68be858923aac7887f8a8451a424113ed4d11c78856229a728abf031ebe747684e14  hi846.yaml
 4942edd551dcf51630246f71e600c17760d3574d5d45e5530d6cfeefe2c9ab1a812fbe220f8e89d92e19a499c592b2507c801ca4eb74cd15fcecb60bff5c650b  imx355.yaml

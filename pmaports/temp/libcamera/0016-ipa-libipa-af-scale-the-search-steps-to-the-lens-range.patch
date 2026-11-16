@@ -1,0 +1,67 @@
+From 50952f1f61d37166f563f9891e2b7e0e39be1772 Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 19:44:18 +0100
+Subject: [PATCH] ipa: libipa: af: Scale the search steps to the lens range
+
+The coarse and fine search steps (30 and 1) are tuned for a 10-bit VCM
+with positions 0-1023. Now that the maximum comes from the lens control,
+a 12-bit lens (AK7375-type, 0-4095) was scanned four times as slowly:
+about 18 s per coarse sweep on the Xiaomi 12 main camera. Scale both
+steps with the lens range.
+
+Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+---
+ src/ipa/libipa/af.cpp | 12 ++++++++++--
+ src/ipa/libipa/af.h   |  2 ++
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/src/ipa/libipa/af.cpp b/src/ipa/libipa/af.cpp
+index fc71bcd..ce9e047 100644
+--- a/src/ipa/libipa/af.cpp
++++ b/src/ipa/libipa/af.cpp
+@@ -85,7 +85,7 @@ void AfAlgorithm::afCoarseScan(af::ActiveState &state)
+ 	if (afNeedIgnoreFrame())
+ 		return;
+ 
+-	if (afScan(state, kCoarseSearchStep)) {
++	if (afScan(state, coarseStep_)) {
+ 		coarseCompleted_ = true;
+ 		state.maxVariance = 0;
+ 		focus_ = state.focus -
+@@ -111,7 +111,7 @@ void AfAlgorithm::afFineScan(af::ActiveState &state)
+ 	if (afNeedIgnoreFrame())
+ 		return;
+ 
+-	if (afScan(state, kFineSearchStep)) {
++	if (afScan(state, fineStep_)) {
+ 		state.stable = true;
+ 		fineCompleted_ = true;
+ 	}
+@@ -278,6 +278,14 @@ void AfAlgorithm::configure(af::ActiveState &state, const ControlInfoMap &lensCo
+ 
+ 	LOG(Af, Debug) << "Configured focus parameters: max=" << initMaxStep_
+ 		       << " focus=" << state.focus;
++
++	/*
++	 * The search steps are tuned for a 10-bit (0-1023) VCM: scale them to
++	 * the lens range, so that a 12-bit lens is not scanned four times as
++	 * slowly.
++	 */
++	coarseStep_ = std::max<uint32_t>(kCoarseSearchStep * initMaxStep_ / kMaxFocusSteps, 1);
++	fineStep_ = std::max<uint32_t>(kFineSearchStep * initMaxStep_ / kMaxFocusSteps, 1);
+ }
+ 
+ /**
+diff --git a/src/ipa/libipa/af.h b/src/ipa/libipa/af.h
+index 464fc0f..91df466 100644
+--- a/src/ipa/libipa/af.h
++++ b/src/ipa/libipa/af.h
+@@ -68,6 +68,8 @@ private:
+ 	uint32_t maxStep_;
+ 	/* Initial value of maxStep_ */
+ 	uint32_t initMaxStep_;
++	uint32_t coarseStep_ = 30;
++	uint32_t fineStep_ = 1;
+ 	/* If the coarse scan completes, it is set to true. */
+ 	bool coarseCompleted_;
+ 	/* If the fine scan completes, it is set to true. */
