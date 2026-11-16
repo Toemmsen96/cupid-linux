@@ -44,6 +44,9 @@ subpackages="
 	$pkgname-openrc
 	$pkgname-systemd
 "
+# linux-msm/audioreach-topology, 2026-10-20 (its SM8450-HDK.m4 builds
+# byte-identical to linux-firmware's SM8450-HDK-tplg.bin)
+_tplg_commit="d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037"
 source="
 	deviceinfo
 	modules-initfs
@@ -65,9 +68,6 @@ source="
 	module_tdm.m4
 	subgraph-device-tdm-playback.m4
 "
-# linux-msm/audioreach-topology, 2026-10-20 (its SM8450-HDK.m4 builds
-# byte-identical to linux-firmware's SM8450-HDK-tplg.bin)
-_tplg_commit="d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037"
 
 build() {
 	devicepkg_build $startdir $pkgname
