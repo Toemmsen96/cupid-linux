@@ -13,6 +13,13 @@ This loads the configuration for the SIM's operator into the modem if it is
 missing, then selects and activates it (the modem restarts once). It does
 nothing when the right configuration is already active.
 
+"stop" (run at shutdown) deactivates it again: with a VoLTE configuration
+already active at power-on, the modem's start-up stalls ("DOG detects
+stalled initialization") until its watchdog has reset it three times, after
+which it comes up without any configuration. Activated after the modem is
+up, it works. A boot after an unclean shutdown goes through those resets
+and then gets the configuration activated here as usual.
+
 /etc/cupid-modem-config can override the choice: a path relative to
 modem_pr/mcfg/configs/mcfg_sw/generic (e.g. EU/<carrier>/Commercial/Swiss),
 or "none" to leave the modem alone.
@@ -40,7 +47,7 @@ def log(msg):
     print(msg, flush=True)
 
 
-def operator_code(timeout=240):
+def operator_code(timeout=480):
     end = time.time() + timeout
     while time.time() < end:
         out = subprocess.run(["mmcli", "-i", "any", "-K"], capture_output=True, text=True).stdout
@@ -130,12 +137,28 @@ class Pdc:
             if 0x12 in ind and struct.unpack("<I", ind[0x12])[0] == 0:
                 break
 
+    def deactivate(self):
+        err, ind = self.call(0x2B, [(0x01, struct.pack("<I", SOFTWARE))], timeout=30)
+        return err == 0 and self.ind_error(ind) == 0
+
     def activate(self):
         err, ind = self.call(0x27, [(0x01, struct.pack("<I", SOFTWARE))], timeout=30)
         return err == 0 and self.ind_error(ind) == 0
 
 
+def stop():
+    pdc = Pdc()
+    cid = pdc.active_id()
+    if not cid or not cid.endswith(ID_SUFFIX):
+        log("no configuration of ours active")
+        return 0
+    log("deactivated" if pdc.deactivate() else "could not deactivate")
+    return 0
+
+
 def main():
+    if sys.argv[1:] == ["stop"]:
+        return stop()
     choice = None
     try:
         with open("/etc/cupid-modem-config") as f:

@@ -6,8 +6,10 @@ Wants=ModemManager.service
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/cupid-modem-config
+# A configuration active at power-on stalls the modem start-up.
+ExecStop=/usr/libexec/cupid-modem-config stop
 RemainAfterExit=yes
-TimeoutStartSec=360
+TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target
