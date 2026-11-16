@@ -9,12 +9,15 @@ driver (drivers/input/misc/aw8697_haptic in MiCode zeus-s-oss) and the
 cupid downstream devicetree:
 
 - regmap over I2C, reset GPIO, chip id 0x97, soft reset;
+- probe only checks the chip and registers the input device; the rest
+  runs from a work item, outside the device lock:
 - the downstream init sequence: 24 kHz PWM, boost and LRA tuning,
   motor protection off, offset calibration, hardware vbat compensation;
-- open-loop f0 detection at probe and the LRA oscillator trim derived
-  from it, as downstream does on every boot;
+- open-loop f0 detection and the LRA oscillator trim derived from it,
+  as downstream does on every boot;
 - the waveform library (aw8697_haptic.bin from the vendor firmware) is
-  written into the chip SRAM asynchronously after probe;
+  written into the chip SRAM in 64-byte bursts (RAMDATA does not
+  advance the register address);
 - a memoryless FF_RUMBLE input device. A rumble loops waveform 11
   (downstream's timed-vibration waveform) in RAM mode with the boost
   bypassed; the magnitude maps onto the digital gain 0x1e..0x80 with
@@ -22,6 +25,15 @@ cupid downstream devicetree:
 
 RTP streaming, the FIFO interrupt, the trigger inputs and the sysfs
 tuning knobs of the downstream driver are left out.
+
+The first I2C error disables the chip for good instead of continuing the
+sequence: a failing transfer costs up to ~3 s on GENI (transfer, abort and
+cancel timeouts), and the first version of this driver, which ignored
+errors inside polling loops in probe, held the device lock for 9 minutes
+on a 6.13 kernel (journald, logind and SSH logins blocked on its uevent).
+Tested on 7.3: probe returns at once, init takes ~0.7 s, removal while
+initialising or playing leaves the chip in standby, and holding the chip
+in reset during init gives one error and an inert device.
 
 diff --git a/Documentation/devicetree/bindings/input/awinic,aw8697.yaml b/Documentation/devicetree/bindings/input/awinic,aw8697.yaml
 new file mode 100644
@@ -132,10 +144,10 @@ index 1339619f0..558fef7ad 100644
  obj-$(CONFIG_INPUT_CM109)		+= cm109.o
 diff --git a/drivers/input/misc/aw8697.c b/drivers/input/misc/aw8697.c
 new file mode 100644
-index 000000000..69eb4bc60
+index 000000000..17890610f
 --- /dev/null
 +++ b/drivers/input/misc/aw8697.c
-@@ -0,0 +1,775 @@
+@@ -0,0 +1,824 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Awinic AW8697 LRA haptic driver
@@ -145,13 +157,20 @@ index 000000000..69eb4bc60
 + * memoryless force-feedback (FF_RUMBLE) input device, which is what
 + * feedbackd and fftest expect.
 + *
-+ * Playback uses the chip's RAM mode: at probe the waveform library
++ * Playback uses the chip's RAM mode: the waveform library
 + * (aw8697_haptic.bin, from the vendor firmware) is written into the chip
 + * SRAM, then a vibration loops one waveform entry until it is stopped, with
 + * the strength set through the digital gain. This is the "RAM loop" path of
 + * the downstream driver, which Android uses for every vibration of a given
-+ * duration. Like downstream, the LRA resonance (f0) is measured once at
-+ * probe and the drive oscillator is trimmed to it.
++ * duration. Like downstream, the LRA resonance (f0) is measured once and the
++ * drive oscillator is trimmed to it.
++ *
++ * Probe only checks the chip ID and registers the input device. Chip setup,
++ * f0 calibration and the waveform upload run from a work item, outside the
++ * device lock, and the first I2C error leaves the chip alone for good: a
++ * failing bus costs seconds per transfer on GENI, and a probe that keeps
++ * retrying holds the device lock (and with it every reader of the device's
++ * uevent, such as journald) for minutes.
 + *
 + * Register map, tuning values and sequences are taken from Xiaomi's
 + * downstream driver (drivers/input/misc/aw8697_haptic, zeus-s-oss) and the
@@ -160,7 +179,6 @@ index 000000000..69eb4bc60
 +
 +#include <linux/bitfield.h>
 +#include <linux/bits.h>
-+#include <linux/completion.h>
 +#include <linux/delay.h>
 +#include <linux/firmware.h>
 +#include <linux/gpio/consumer.h>
@@ -182,7 +200,6 @@ index 000000000..69eb4bc60
 +#define AW8697_REG_WAVSEQ1		0x07
 +#define AW8697_REG_WAVSEQ2		0x08
 +#define AW8697_REG_WAVLOOP1		0x0f
-+#define AW8697_REG_MAIN_LOOP		0x13
 +#define AW8697_REG_DBGCTRL		0x20
 +#define AW8697_REG_BASE_ADDRH		0x21
 +#define AW8697_REG_BASE_ADDRL		0x22
@@ -281,6 +298,8 @@ index 000000000..69eb4bc60
 +/* Waveform library header: 2 bytes checksum, 2 bytes SRAM base address. */
 +#define AW8697_FW_HDR_LEN		4
 +#define AW8697_FW_NAME			"aw8697_haptic.bin"
++/* RAMDATA does not auto-increment the register address: burst writes. */
++#define AW8697_RAM_CHUNK		64
 +
 +/*
 + * Index of the waveform the downstream driver loops for timed vibrations
@@ -320,11 +339,16 @@ index 000000000..69eb4bc60
 +
 +	/* Serialises all register access after probe. */
 +	struct mutex lock;
++	struct work_struct init_work;
 +	struct work_struct play_work;
 +
-+	bool ram_ready;
-+	/* Completed once the asynchronous waveform load has finished. */
-+	struct completion fw_done;
++	/*
++	 * First I/O error. Once set, no further register access is made:
++	 * every failing transfer can take seconds on the I2C controller.
++	 */
++	int err;
++	/* Waveforms are in the chip RAM and the chip is configured. */
++	bool ready;
 +	u8 trim_lra;
 +
 +	/* Requested by the FF core, consumed by play_work. */
@@ -345,78 +369,126 @@ index 000000000..69eb4bc60
 +	.cache_type = REGCACHE_NONE,
 +};
 +
-+static int aw8697_wait_standby(struct aw8697 *aw)
++static void aw8697_fail(struct aw8697 *aw, int ret, unsigned int reg)
 +{
-+	unsigned int val;
-+	int i, ret;
++	if (aw->err)
++		return;
++	aw->err = ret;
++	dev_err(&aw->client->dev,
++		"I/O error %d at register 0x%02x, haptics disabled\n", ret, reg);
++}
 +
-+	for (i = 0; i < 100; i++) {
-+		ret = regmap_read(aw->regmap, AW8697_REG_GLB_STATE, &val);
-+		if (ret)
-+			return ret;
++/*
++ * Register helpers: they do nothing once an error has been seen, so a
++ * sequence can be written straight through and checked once at the end.
++ */
++static unsigned int aw8697_read(struct aw8697 *aw, unsigned int reg)
++{
++	unsigned int val = 0;
++	int ret;
++
++	if (aw->err)
++		return 0;
++	ret = regmap_read(aw->regmap, reg, &val);
++	if (ret)
++		aw8697_fail(aw, ret, reg);
++	return val;
++}
++
++static void aw8697_write(struct aw8697 *aw, unsigned int reg, unsigned int val)
++{
++	int ret;
++
++	if (aw->err)
++		return;
++	ret = regmap_write(aw->regmap, reg, val);
++	if (ret)
++		aw8697_fail(aw, ret, reg);
++}
++
++static void aw8697_update(struct aw8697 *aw, unsigned int reg,
++			  unsigned int mask, unsigned int val)
++{
++	int ret;
++
++	if (aw->err)
++		return;
++	ret = regmap_update_bits(aw->regmap, reg, mask, val);
++	if (ret)
++		aw8697_fail(aw, ret, reg);
++}
++
++static void aw8697_set_bits(struct aw8697 *aw, unsigned int reg,
++			    unsigned int bits)
++{
++	aw8697_update(aw, reg, bits, bits);
++}
++
++static void aw8697_clear_bits(struct aw8697 *aw, unsigned int reg,
++			      unsigned int bits)
++{
++	aw8697_update(aw, reg, bits, 0);
++}
++
++static void aw8697_wait_standby(struct aw8697 *aw)
++{
++	unsigned int val = 0;
++	int i;
++
++	for (i = 0; i < 100 && !aw->err; i++) {
++		val = aw8697_read(aw, AW8697_REG_GLB_STATE);
 +		if ((val & 0x0f) == 0)
-+			return 0;
++			return;
 +		usleep_range(2000, 2500);
 +	}
 +
-+	dev_warn(&aw->client->dev, "did not enter standby (state 0x%02x)\n",
-+		 val);
-+	return -ETIMEDOUT;
++	if (!aw->err)
++		dev_warn(&aw->client->dev, "did not enter standby (state 0x%02x)\n",
++			 val);
 +}
 +
 +static void aw8697_set_active(struct aw8697 *aw, bool active)
 +{
-+	unsigned int val;
-+
 +	if (active) {
-+		regmap_clear_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+				  AW8697_SYSCTRL_STANDBY);
++		aw8697_clear_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_STANDBY);
 +		/* Reading SYSINT clears latched interrupt flags. */
-+		regmap_read(aw->regmap, AW8697_REG_SYSINT, &val);
-+		regmap_clear_bits(aw->regmap, AW8697_REG_SYSINTM,
-+				  AW8697_SYSINTM_UVLO_OFF);
++		aw8697_read(aw, AW8697_REG_SYSINT);
++		aw8697_clear_bits(aw, AW8697_REG_SYSINTM, AW8697_SYSINTM_UVLO_OFF);
 +	} else {
-+		regmap_set_bits(aw->regmap, AW8697_REG_SYSINTM,
-+				AW8697_SYSINTM_UVLO_OFF);
-+		regmap_set_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+				AW8697_SYSCTRL_STANDBY);
++		aw8697_set_bits(aw, AW8697_REG_SYSINTM, AW8697_SYSINTM_UVLO_OFF);
++		aw8697_set_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_STANDBY);
 +	}
 +}
 +
 +static void aw8697_stop(struct aw8697 *aw)
 +{
-+	regmap_clear_bits(aw->regmap, AW8697_REG_GO, AW8697_GO);
++	aw8697_clear_bits(aw, AW8697_REG_GO, AW8697_GO);
 +	aw8697_wait_standby(aw);
 +	aw8697_set_active(aw, false);
 +}
 +
-+/* Battery voltage in mV, measured by the chip's own ADC. */
-+static int aw8697_get_vbat(struct aw8697 *aw)
++/* Battery voltage in mV, measured by the chip's own ADC; 0 if unknown. */
++static unsigned int aw8697_get_vbat(struct aw8697 *aw)
 +{
 +	unsigned int val;
-+	int i, ret;
++	int i;
 +
-+	regmap_set_bits(aw->regmap, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
-+	regmap_set_bits(aw->regmap, AW8697_REG_DETCTRL, AW8697_DETCTRL_VBAT_GO);
-+	for (i = 0; i < 100; i++) {
-+		ret = regmap_read(aw->regmap, AW8697_REG_DETCTRL, &val);
-+		if (ret || !(val & AW8697_DETCTRL_VBAT_GO))
++	aw8697_set_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
++	aw8697_set_bits(aw, AW8697_REG_DETCTRL, AW8697_DETCTRL_VBAT_GO);
++	for (i = 0; i < 100 && !aw->err; i++) {
++		if (!(aw8697_read(aw, AW8697_REG_DETCTRL) & AW8697_DETCTRL_VBAT_GO))
 +			break;
 +		usleep_range(100, 200);
 +	}
-+	ret = regmap_read(aw->regmap, AW8697_REG_VBATDET, &val);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			  AW8697_SYSCTRL_RAMINIT);
-+	if (ret)
-+		return ret;
++	val = aw8697_read(aw, AW8697_REG_VBATDET);
++	aw8697_clear_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
 +
-+	return 6100 * val / 256;
++	return aw->err ? 0 : 6100 * val / 256;
 +}
 +
 +static u8 aw8697_magnitude_to_gain(struct aw8697 *aw, u16 magnitude)
 +{
-+	unsigned int gain;
-+	int vbat;
++	unsigned int gain, vbat;
 +
 +	gain = AW8697_GAIN_MIN +
 +	       DIV_ROUND_CLOSEST((AW8697_GAIN_MAX - AW8697_GAIN_MIN) *
@@ -428,7 +500,7 @@ index 000000000..69eb4bc60
 +	 * like downstream does, capped at the gain for a 3.0 V battery.
 +	 */
 +	vbat = aw8697_get_vbat(aw);
-+	if (vbat > 0) {
++	if (vbat >= AW8697_VBAT_MIN_MV) {
 +		gain = gain * AW8697_VBAT_REFER_MV / vbat;
 +		gain = min_t(unsigned int, gain,
 +			     AW8697_GAIN_MAX * AW8697_VBAT_REFER_MV /
@@ -440,44 +512,35 @@ index 000000000..69eb4bc60
 +
 +static void aw8697_play_loop(struct aw8697 *aw, u16 magnitude)
 +{
-+	regmap_write(aw->regmap, AW8697_REG_TRIM_LRA, aw->trim_lra);
++	aw8697_write(aw, AW8697_REG_TRIM_LRA, aw->trim_lra);
 +
 +	/* Loop one waveform forever; the FF core times the stop. */
-+	regmap_write(aw->regmap, AW8697_REG_WAVSEQ1, AW8697_LOOP_WAVEFORM);
-+	regmap_write(aw->regmap, AW8697_REG_WAVSEQ2, 0);
-+	regmap_update_bits(aw->regmap, AW8697_REG_WAVLOOP1,
-+			   AW8697_WAVLOOP_SEQ1,
-+			   FIELD_PREP(AW8697_WAVLOOP_SEQ1,
-+				      AW8697_WAVLOOP_INFINITE));
++	aw8697_write(aw, AW8697_REG_WAVSEQ1, AW8697_LOOP_WAVEFORM);
++	aw8697_write(aw, AW8697_REG_WAVSEQ2, 0);
++	aw8697_update(aw, AW8697_REG_WAVLOOP1, AW8697_WAVLOOP_SEQ1,
++		      FIELD_PREP(AW8697_WAVLOOP_SEQ1, AW8697_WAVLOOP_INFINITE));
 +
-+	regmap_write(aw->regmap, AW8697_REG_DATDBG,
++	aw8697_write(aw, AW8697_REG_DATDBG,
 +		     aw8697_magnitude_to_gain(aw, magnitude));
 +
 +	/* RAM mode, boost bypassed (downstream's RAM_LOOP mode). */
-+	regmap_update_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			   AW8697_SYSCTRL_PLAY_MODE,
-+			   AW8697_SYSCTRL_PLAY_MODE_RAM);
++	aw8697_update(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_PLAY_MODE,
++		      AW8697_SYSCTRL_PLAY_MODE_RAM);
 +	aw8697_set_active(aw, true);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			  AW8697_SYSCTRL_BST_MODE_BOOST);
++	aw8697_clear_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_BST_MODE_BOOST);
 +
-+	regmap_set_bits(aw->regmap, AW8697_REG_GO, AW8697_GO);
++	aw8697_set_bits(aw, AW8697_REG_GO, AW8697_GO);
 +}
 +
 +static void aw8697_play_work(struct work_struct *work)
 +{
 +	struct aw8697 *aw = container_of(work, struct aw8697, play_work);
-+	u16 magnitude;
-+	bool playing;
 +
 +	mutex_lock(&aw->lock);
-+	magnitude = READ_ONCE(aw->magnitude);
-+	playing = READ_ONCE(aw->playing);
-+
-+	if (aw->ram_ready) {
++	if (aw->ready && !aw->err) {
 +		aw8697_stop(aw);
-+		if (playing)
-+			aw8697_play_loop(aw, magnitude);
++		if (READ_ONCE(aw->playing))
++			aw8697_play_loop(aw, READ_ONCE(aw->magnitude));
 +	}
 +	mutex_unlock(&aw->lock);
 +}
@@ -502,17 +565,20 @@ index 000000000..69eb4bc60
 +	return 0;
 +}
 +
-+static void aw8697_close(struct input_dev *input)
++static void aw8697_halt(struct aw8697 *aw)
 +{
-+	struct aw8697 *aw = input_get_drvdata(input);
-+
 +	WRITE_ONCE(aw->playing, false);
 +	cancel_work_sync(&aw->play_work);
 +
 +	mutex_lock(&aw->lock);
-+	if (aw->ram_ready)
++	if (aw->ready && !aw->err)
 +		aw8697_stop(aw);
 +	mutex_unlock(&aw->lock);
++}
++
++static void aw8697_close(struct input_dev *input)
++{
++	aw8697_halt(input_get_drvdata(input));
 +}
 +
 +/*
@@ -523,7 +589,7 @@ index 000000000..69eb4bc60
 +static void aw8697_f0_calibrate(struct aw8697 *aw)
 +{
 +	struct device *dev = &aw->client->dev;
-+	unsigned int val, f0_reg, f0, f0_limit, trace_ms;
++	unsigned int f0_reg, f0 = 0, f0_limit, trace_ms;
 +	u8 n_pre, n_wait, n_repeat, n_trace;
 +	int step, i;
 +
@@ -533,37 +599,35 @@ index 000000000..69eb4bc60
 +	n_trace = aw8697_def_f0_trace[3];
 +
 +	aw->trim_lra = 0;
-+	regmap_write(aw->regmap, AW8697_REG_TRIM_LRA, 0);
++	aw8697_write(aw, AW8697_REG_TRIM_LRA, 0);
 +
 +	aw8697_stop(aw);
-+	regmap_update_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			   AW8697_SYSCTRL_PLAY_MODE,
-+			   AW8697_SYSCTRL_PLAY_MODE_CONT);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			  AW8697_SYSCTRL_BST_MODE_BOOST);
++	aw8697_update(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_PLAY_MODE,
++		      AW8697_SYSCTRL_PLAY_MODE_CONT);
++	aw8697_clear_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_BST_MODE_BOOST);
 +	aw8697_set_active(aw, true);
 +
-+	regmap_clear_bits(aw->regmap, AW8697_REG_CONT_CTRL,
++	aw8697_clear_bits(aw, AW8697_REG_CONT_CTRL,
 +			  AW8697_CONT_CTRL_CLOSE_PLAYBACK);
-+	regmap_set_bits(aw->regmap, AW8697_REG_CONT_CTRL,
-+			AW8697_CONT_CTRL_F0_DETECT);
++	aw8697_set_bits(aw, AW8697_REG_CONT_CTRL, AW8697_CONT_CTRL_F0_DETECT);
 +
-+	regmap_update_bits(aw->regmap, AW8697_REG_DATCTRL, AW8697_DATCTRL_FC,
-+			   AW8697_DATCTRL_FC_1000HZ);
-+	regmap_set_bits(aw->regmap, AW8697_REG_DATCTRL, AW8697_DATCTRL_LPF_EN);
-+	regmap_set_bits(aw->regmap, AW8697_REG_ANACTRL,
-+			AW8697_ANACTRL_LRA_SRC_REG);
++	aw8697_update(aw, AW8697_REG_DATCTRL, AW8697_DATCTRL_FC,
++		      AW8697_DATCTRL_FC_1000HZ);
++	aw8697_set_bits(aw, AW8697_REG_DATCTRL, AW8697_DATCTRL_LPF_EN);
++	aw8697_set_bits(aw, AW8697_REG_ANACTRL, AW8697_ANACTRL_LRA_SRC_REG);
 +
 +	f0_reg = 1000000000 / (aw->f0_pre * AW8697_F0_COEFF);
-+	regmap_write(aw->regmap, AW8697_REG_F_PRE_H, (f0_reg >> 8) & 0xff);
-+	regmap_write(aw->regmap, AW8697_REG_F_PRE_L, f0_reg & 0xff);
-+	regmap_write(aw->regmap, AW8697_REG_DRV_LVL, aw->cont_drv_lvl);
-+	regmap_write(aw->regmap, AW8697_REG_NUM_F0_1, (n_pre << 4) | n_wait);
-+	regmap_write(aw->regmap, AW8697_REG_NUM_F0_2, n_repeat);
-+	regmap_write(aw->regmap, AW8697_REG_NUM_F0_3, n_trace);
++	aw8697_write(aw, AW8697_REG_F_PRE_H, (f0_reg >> 8) & 0xff);
++	aw8697_write(aw, AW8697_REG_F_PRE_L, f0_reg & 0xff);
++	aw8697_write(aw, AW8697_REG_DRV_LVL, aw->cont_drv_lvl);
++	aw8697_write(aw, AW8697_REG_NUM_F0_1, (n_pre << 4) | n_wait);
++	aw8697_write(aw, AW8697_REG_NUM_F0_2, n_repeat);
++	aw8697_write(aw, AW8697_REG_NUM_F0_3, n_trace);
 +
-+	regmap_read(aw->regmap, AW8697_REG_SYSINT, &val);
-+	regmap_set_bits(aw->regmap, AW8697_REG_GO, AW8697_GO);
++	aw8697_read(aw, AW8697_REG_SYSINT);
++	aw8697_set_bits(aw, AW8697_REG_GO, AW8697_GO);
++	if (aw->err)
++		return;
 +
 +	/* f0_pre is in 0.1 Hz, so one period is 10000 / f0_pre ms. */
 +	trace_ms = 10000 / aw->f0_pre;
@@ -571,25 +635,21 @@ index 000000000..69eb4bc60
 +			       (n_trace + n_wait) * (n_repeat - 1)) + 50;
 +	msleep(trace_ms);
 +
-+	f0 = 0;
-+	for (i = 0; i < 50; i++) {
-+		regmap_read(aw->regmap, AW8697_REG_GLB_STATE, &val);
-+		if ((val & 0x0f) == 0) {
-+			regmap_read(aw->regmap, AW8697_REG_F_LRA_F0_H, &val);
-+			f0_reg = val << 8;
-+			regmap_read(aw->regmap, AW8697_REG_F_LRA_F0_L, &val);
-+			f0_reg |= val;
-+			if (f0_reg)
++	for (i = 0; i < 50 && !aw->err; i++) {
++		if ((aw8697_read(aw, AW8697_REG_GLB_STATE) & 0x0f) == 0) {
++			f0_reg = aw8697_read(aw, AW8697_REG_F_LRA_F0_H) << 8;
++			f0_reg |= aw8697_read(aw, AW8697_REG_F_LRA_F0_L);
++			if (f0_reg && !aw->err)
 +				f0 = 1000000000 / (f0_reg * AW8697_F0_COEFF);
 +			break;
 +		}
 +		usleep_range(10000, 11000);
 +	}
 +
-+	regmap_set_bits(aw->regmap, AW8697_REG_CONT_CTRL,
-+			AW8697_CONT_CTRL_CLOSE_PLAYBACK);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_CONT_CTRL,
-+			  AW8697_CONT_CTRL_F0_DETECT);
++	aw8697_set_bits(aw, AW8697_REG_CONT_CTRL, AW8697_CONT_CTRL_CLOSE_PLAYBACK);
++	aw8697_clear_bits(aw, AW8697_REG_CONT_CTRL, AW8697_CONT_CTRL_F0_DETECT);
++	if (aw->err)
++		return;
 +
 +	if (!f0) {
 +		dev_warn(dev, "f0 measurement failed, using untrimmed oscillator\n");
@@ -617,19 +677,19 @@ index 000000000..69eb4bc60
 +		 aw->trim_lra);
 +
 +out:
-+	regmap_write(aw->regmap, AW8697_REG_TRIM_LRA, aw->trim_lra);
++	aw8697_write(aw, AW8697_REG_TRIM_LRA, aw->trim_lra);
 +	aw8697_stop(aw);
-+	regmap_update_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			   AW8697_SYSCTRL_PLAY_MODE,
-+			   AW8697_SYSCTRL_PLAY_MODE_RAM);
++	aw8697_update(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_PLAY_MODE,
++		      AW8697_SYSCTRL_PLAY_MODE_RAM);
 +}
 +
 +static int aw8697_load_ram(struct aw8697 *aw, const struct firmware *fw)
 +{
 +	struct device *dev = &aw->client->dev;
++	u8 buf[1 + AW8697_RAM_CHUNK];
 +	unsigned int base, fifo_ae, fifo_af;
 +	u16 checksum = 0;
-+	size_t i;
++	size_t i, len;
 +	int ret;
 +
 +	if (fw->size <= AW8697_FW_HDR_LEN) {
@@ -649,121 +709,133 @@ index 000000000..69eb4bc60
 +	fifo_ae = base >> 2;
 +	fifo_af = base - (base >> 2);
 +
-+	regmap_set_bits(aw->regmap, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
++	aw8697_set_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
 +
-+	regmap_write(aw->regmap, AW8697_REG_BASE_ADDRH, base >> 8);
-+	regmap_write(aw->regmap, AW8697_REG_BASE_ADDRL, base & 0xff);
-+	regmap_write(aw->regmap, AW8697_REG_FIFO_AEH, fifo_ae >> 8);
-+	regmap_write(aw->regmap, AW8697_REG_FIFO_AEL, fifo_ae & 0xff);
-+	regmap_write(aw->regmap, AW8697_REG_FIFO_AFH, fifo_af >> 8);
-+	regmap_write(aw->regmap, AW8697_REG_FIFO_AFL, fifo_af & 0xff);
++	aw8697_write(aw, AW8697_REG_BASE_ADDRH, base >> 8);
++	aw8697_write(aw, AW8697_REG_BASE_ADDRL, base & 0xff);
++	aw8697_write(aw, AW8697_REG_FIFO_AEH, fifo_ae >> 8);
++	aw8697_write(aw, AW8697_REG_FIFO_AEL, fifo_ae & 0xff);
++	aw8697_write(aw, AW8697_REG_FIFO_AFH, fifo_af >> 8);
++	aw8697_write(aw, AW8697_REG_FIFO_AFL, fifo_af & 0xff);
 +
-+	regmap_write(aw->regmap, AW8697_REG_RAMADDRH, base >> 8);
-+	regmap_write(aw->regmap, AW8697_REG_RAMADDRL, base & 0xff);
-+	/* The SRAM address auto-increments on every RAMDATA write. */
-+	for (i = AW8697_FW_HDR_LEN; i < fw->size; i++) {
-+		ret = regmap_write(aw->regmap, AW8697_REG_RAMDATA,
-+				   fw->data[i]);
-+		if (ret)
-+			break;
++	aw8697_write(aw, AW8697_REG_RAMADDRH, base >> 8);
++	aw8697_write(aw, AW8697_REG_RAMADDRL, base & 0xff);
++
++	/*
++	 * The SRAM address auto-increments on every RAMDATA byte and the
++	 * register address stays at RAMDATA, so the library goes out in
++	 * bursts (a few hundred milliseconds instead of ~3600 transfers).
++	 */
++	buf[0] = AW8697_REG_RAMDATA;
++	for (i = AW8697_FW_HDR_LEN; i < fw->size && !aw->err; i += len) {
++		len = min_t(size_t, fw->size - i, AW8697_RAM_CHUNK);
++		memcpy(&buf[1], &fw->data[i], len);
++		ret = i2c_master_send(aw->client, buf, len + 1);
++		if (ret != len + 1)
++			aw8697_fail(aw, ret < 0 ? ret : -EIO, AW8697_REG_RAMDATA);
 +	}
 +
-+	regmap_clear_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			  AW8697_SYSCTRL_RAMINIT);
-+
-+	if (ret) {
-+		dev_err(dev, "failed to write waveform RAM: %d\n", ret);
-+		return ret;
-+	}
++	aw8697_clear_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
++	if (aw->err)
++		return aw->err;
 +
 +	dev_info(dev, "loaded %zu bytes of waveforms at 0x%04x\n",
 +		 fw->size - AW8697_FW_HDR_LEN, base);
 +	return 0;
 +}
 +
-+static void aw8697_fw_loaded(const struct firmware *fw, void *context)
-+{
-+	struct aw8697 *aw = context;
-+
-+	if (!fw) {
-+		dev_err(&aw->client->dev,
-+			"%s not found, vibration disabled\n", AW8697_FW_NAME);
-+		goto out;
-+	}
-+
-+	mutex_lock(&aw->lock);
-+	if (!aw8697_load_ram(aw, fw))
-+		aw->ram_ready = true;
-+	mutex_unlock(&aw->lock);
-+
-+	release_firmware(fw);
-+out:
-+	complete(&aw->fw_done);
-+}
-+
-+static int aw8697_hw_init(struct aw8697 *aw)
++static void aw8697_hw_init(struct aw8697 *aw)
 +{
 +	unsigned int val;
++	int i;
 +
 +	aw8697_set_active(aw, false);
 +
-+	regmap_update_bits(aw->regmap, AW8697_REG_PWMDBG,
-+			   AW8697_PWMDBG_PWM_MODE, AW8697_PWMDBG_PWM_24K);
++	aw8697_update(aw, AW8697_REG_PWMDBG, AW8697_PWMDBG_PWM_MODE,
++		      AW8697_PWMDBG_PWM_24K);
 +
-+	regmap_write(aw->regmap, AW8697_REG_BSTDBG1, aw8697_def_bstdbg[0]);
-+	regmap_write(aw->regmap, AW8697_REG_BSTDBG2, aw8697_def_bstdbg[1]);
-+	regmap_write(aw->regmap, AW8697_REG_BSTDBG3, aw8697_def_bstdbg[2]);
-+	regmap_write(aw->regmap, AW8697_REG_TSET, AW8697_DEF_TSET);
-+	regmap_write(aw->regmap, AW8697_REG_R_SPARE, AW8697_DEF_R_SPARE);
++	aw8697_write(aw, AW8697_REG_BSTDBG1, aw8697_def_bstdbg[0]);
++	aw8697_write(aw, AW8697_REG_BSTDBG2, aw8697_def_bstdbg[1]);
++	aw8697_write(aw, AW8697_REG_BSTDBG3, aw8697_def_bstdbg[2]);
++	aw8697_write(aw, AW8697_REG_TSET, AW8697_DEF_TSET);
++	aw8697_write(aw, AW8697_REG_R_SPARE, AW8697_DEF_R_SPARE);
 +
-+	regmap_update_bits(aw->regmap, AW8697_REG_ANADBG, AW8697_ANADBG_IOC,
-+			   AW8697_ANADBG_IOC_4P65A);
-+	regmap_update_bits(aw->regmap, AW8697_REG_BSTCFG,
-+			   AW8697_BSTCFG_PEAKCUR, AW8697_BSTCFG_PEAKCUR_3P5A);
-+	regmap_update_bits(aw->regmap, AW8697_REG_BSTDBG4,
-+			   AW8697_BSTDBG4_BSTVOL,
-+			   FIELD_PREP(AW8697_BSTDBG4_BSTVOL, aw->bst_vol));
++	aw8697_update(aw, AW8697_REG_ANADBG, AW8697_ANADBG_IOC,
++		      AW8697_ANADBG_IOC_4P65A);
++	aw8697_update(aw, AW8697_REG_BSTCFG, AW8697_BSTCFG_PEAKCUR,
++		      AW8697_BSTCFG_PEAKCUR_3P5A);
++	aw8697_update(aw, AW8697_REG_BSTDBG4, AW8697_BSTDBG4_BSTVOL,
++		      FIELD_PREP(AW8697_BSTDBG4_BSTVOL, aw->bst_vol));
 +
 +	/* Motor protection off, manual boost: as downstream. */
-+	regmap_set_bits(aw->regmap, AW8697_REG_DETCTRL,
-+			AW8697_DETCTRL_PROTECT_NO_ACTION);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_PWMPRC, AW8697_PWMPRC_PRC_EN);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_PRLVL, AW8697_PRLVL_PR_EN);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_BST_AUTO,
-+			  AW8697_BST_AUTO_AUTOSW);
++	aw8697_set_bits(aw, AW8697_REG_DETCTRL, AW8697_DETCTRL_PROTECT_NO_ACTION);
++	aw8697_clear_bits(aw, AW8697_REG_PWMPRC, AW8697_PWMPRC_PRC_EN);
++	aw8697_clear_bits(aw, AW8697_REG_PRLVL, AW8697_PRLVL_PR_EN);
++	aw8697_clear_bits(aw, AW8697_REG_BST_AUTO, AW8697_BST_AUTO_AUTOSW);
 +
 +	/* Output offset calibration. */
-+	regmap_set_bits(aw->regmap, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
-+	regmap_set_bits(aw->regmap, AW8697_REG_DETCTRL, AW8697_DETCTRL_DIAG_GO);
-+	regmap_read_poll_timeout(aw->regmap, AW8697_REG_DETCTRL, val,
-+				 !(val & AW8697_DETCTRL_DIAG_GO), 100, 50000);
-+	regmap_clear_bits(aw->regmap, AW8697_REG_SYSCTRL,
-+			  AW8697_SYSCTRL_RAMINIT);
++	aw8697_set_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
++	aw8697_set_bits(aw, AW8697_REG_DETCTRL, AW8697_DETCTRL_DIAG_GO);
++	for (i = 0; i < 50 && !aw->err; i++) {
++		val = aw8697_read(aw, AW8697_REG_DETCTRL);
++		if (!(val & AW8697_DETCTRL_DIAG_GO))
++			break;
++		usleep_range(1000, 1500);
++	}
++	aw8697_clear_bits(aw, AW8697_REG_SYSCTRL, AW8697_SYSCTRL_RAMINIT);
 +
-+	regmap_set_bits(aw->regmap, AW8697_REG_ADCTEST,
-+			AW8697_ADCTEST_VBAT_HW_COMP);
++	aw8697_set_bits(aw, AW8697_REG_ADCTEST, AW8697_ADCTEST_VBAT_HW_COMP);
 +
 +	aw8697_f0_calibrate(aw);
 +
-+	regmap_write(aw->regmap, AW8697_REG_BEMF_VTHH_H, aw8697_def_bemf[0]);
-+	regmap_write(aw->regmap, AW8697_REG_BEMF_VTHH_L, aw8697_def_bemf[1]);
-+	regmap_write(aw->regmap, AW8697_REG_BEMF_VTHL_H, aw8697_def_bemf[2]);
-+	regmap_write(aw->regmap, AW8697_REG_BEMF_VTHL_L, aw8697_def_bemf[3]);
++	aw8697_write(aw, AW8697_REG_BEMF_VTHH_H, aw8697_def_bemf[0]);
++	aw8697_write(aw, AW8697_REG_BEMF_VTHH_L, aw8697_def_bemf[1]);
++	aw8697_write(aw, AW8697_REG_BEMF_VTHL_H, aw8697_def_bemf[2]);
++	aw8697_write(aw, AW8697_REG_BEMF_VTHL_L, aw8697_def_bemf[3]);
 +
 +	/* Edge-triggered interrupt line; no interrupt sources are used. */
-+	regmap_set_bits(aw->regmap, AW8697_REG_DBGCTRL,
-+			AW8697_DBGCTRL_INT_MODE_EDGE);
++	aw8697_set_bits(aw, AW8697_REG_DBGCTRL, AW8697_DBGCTRL_INT_MODE_EDGE);
++}
 +
-+	return 0;
++/* Runs once after probe, without the device lock held. */
++static void aw8697_init_work(struct work_struct *work)
++{
++	struct aw8697 *aw = container_of(work, struct aw8697, init_work);
++	struct device *dev = &aw->client->dev;
++	const struct firmware *fw;
++	int ret;
++
++	ret = request_firmware(&fw, AW8697_FW_NAME, dev);
++	if (ret) {
++		dev_err(dev, "%s not available (%d), haptics disabled\n",
++			AW8697_FW_NAME, ret);
++		return;
++	}
++
++	mutex_lock(&aw->lock);
++	aw8697_hw_init(aw);
++	if (!aw->err && !aw8697_load_ram(aw, fw))
++		aw->ready = true;
++	mutex_unlock(&aw->lock);
++
++	release_firmware(fw);
++}
++
++static void aw8697_cancel_work(void *data)
++{
++	struct aw8697 *aw = data;
++
++	cancel_work_sync(&aw->init_work);
++	aw8697_halt(aw);
 +}
 +
 +static int aw8697_probe(struct i2c_client *client)
 +{
 +	struct device *dev = &client->dev;
 +	struct aw8697 *aw;
-+	unsigned int id;
++	unsigned int id = 0;
 +	u32 val;
-+	int ret, i;
++	int ret = -ENODEV, i;
 +
 +	aw = devm_kzalloc(dev, sizeof(*aw), GFP_KERNEL);
 +	if (!aw)
@@ -771,9 +843,11 @@ index 000000000..69eb4bc60
 +
 +	aw->client = client;
 +	i2c_set_clientdata(client, aw);
-+	mutex_init(&aw->lock);
++	ret = devm_mutex_init(dev, &aw->lock);
++	if (ret)
++		return ret;
++	INIT_WORK(&aw->init_work, aw8697_init_work);
 +	INIT_WORK(&aw->play_work, aw8697_play_work);
-+	init_completion(&aw->fw_done);
 +
 +	aw->f0_pre = AW8697_DEF_F0_PRE;
 +	aw->f0_cali_percent = AW8697_DEF_F0_CALI_PERCENT;
@@ -794,16 +868,19 @@ index 000000000..69eb4bc60
 +				     "failed to init regmap\n");
 +
 +	/* Asserted = low = chip held in reset. */
-+	aw->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
++	aw->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
 +	if (IS_ERR(aw->reset_gpio))
 +		return dev_err_probe(dev, PTR_ERR(aw->reset_gpio),
 +				     "failed to get reset gpio\n");
 +
-+	for (i = 0; i < 5; i++) {
-+		gpiod_set_value_cansleep(aw->reset_gpio, 1);
-+		usleep_range(5000, 6000);
-+		gpiod_set_value_cansleep(aw->reset_gpio, 0);
-+		usleep_range(5000, 6000);
++	/* At most three attempts: a dead bus costs seconds per transfer. */
++	for (i = 0; i < 3; i++) {
++		if (aw->reset_gpio) {
++			gpiod_set_value_cansleep(aw->reset_gpio, 1);
++			usleep_range(5000, 6000);
++			gpiod_set_value_cansleep(aw->reset_gpio, 0);
++			usleep_range(5000, 6000);
++		}
 +
 +		ret = regmap_read(aw->regmap, AW8697_REG_ID, &id);
 +		if (!ret && id == AW8697_CHIPID)
@@ -816,12 +893,18 @@ index 000000000..69eb4bc60
 +		return dev_err_probe(dev, -ENODEV,
 +				     "unexpected chip id 0x%02x\n", id);
 +
-+	regmap_write(aw->regmap, AW8697_REG_ID, AW8697_SOFT_RESET);
-+	usleep_range(1000, 2000);
-+
-+	ret = aw8697_hw_init(aw);
++	ret = regmap_write(aw->regmap, AW8697_REG_ID, AW8697_SOFT_RESET);
 +	if (ret)
-+		return dev_err_probe(dev, ret, "failed to initialise chip\n");
++		return dev_err_probe(dev, ret, "soft reset failed\n");
++	usleep_range(3000, 3500);
++
++	/*
++	 * Registered before the input device, so it runs after the input
++	 * device is gone on unbind: no work can be queued any more by then.
++	 */
++	ret = devm_add_action_or_reset(dev, aw8697_cancel_work, aw);
++	if (ret)
++		return ret;
 +
 +	aw->input = devm_input_allocate_device(dev);
 +	if (!aw->input)
@@ -842,42 +925,21 @@ index 000000000..69eb4bc60
 +		return dev_err_probe(dev, ret, "failed to register input\n");
 +
 +	/*
-+	 * Writing the waveform RAM takes a few thousand I2C transactions;
-+	 * do it asynchronously. Playback requests before it is done are
++	 * Configuration, f0 calibration (one short buzz) and the waveform
++	 * upload take about a second; vibration requests before that are
 +	 * ignored.
 +	 */
-+	ret = request_firmware_nowait(THIS_MODULE, true, AW8697_FW_NAME, dev,
-+				      GFP_KERNEL, aw, aw8697_fw_loaded);
-+	if (ret)
-+		return dev_err_probe(dev, ret, "failed to request %s\n",
-+				     AW8697_FW_NAME);
++	queue_work(system_long_wq, &aw->init_work);
 +
 +	return 0;
-+}
-+
-+static void aw8697_remove(struct i2c_client *client)
-+{
-+	struct aw8697 *aw = i2c_get_clientdata(client);
-+
-+	/* The firmware callback dereferences aw: let it finish first. */
-+	wait_for_completion(&aw->fw_done);
-+	cancel_work_sync(&aw->play_work);
-+
-+	mutex_lock(&aw->lock);
-+	aw8697_stop(aw);
-+	aw->ram_ready = false;
-+	mutex_unlock(&aw->lock);
 +}
 +
 +static int aw8697_suspend(struct device *dev)
 +{
 +	struct aw8697 *aw = dev_get_drvdata(dev);
 +
-+	cancel_work_sync(&aw->play_work);
-+
-+	mutex_lock(&aw->lock);
-+	aw8697_stop(aw);
-+	mutex_unlock(&aw->lock);
++	flush_work(&aw->init_work);
++	aw8697_halt(aw);
 +
 +	return 0;
 +}
@@ -903,7 +965,6 @@ index 000000000..69eb4bc60
 +		.pm = pm_sleep_ptr(&aw8697_pm_ops),
 +	},
 +	.probe = aw8697_probe,
-+	.remove = aw8697_remove,
 +	.id_table = aw8697_id,
 +};
 +module_i2c_driver(aw8697_driver);
