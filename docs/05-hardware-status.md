@@ -35,6 +35,18 @@ fix that is in this repository but not yet booted.
 | Fingerprint | | no | not feasible | Goodix optical under-display sensor; its SPI bus belongs to TrustZone and capture/matching run in the QSEE app `gfcupid`, no Linux path |
 | zram swap | | | works | kernel had only the LZO backend, pmOS asks for zstd; zstd/lz4 backends enabled, verified on pkgrel 1 | Goodix, no mainline driver |
 
+## Linux 7.3 (`mainline` kernel package)
+
+First booted 2026-11-16 (kernel 7.3.4, r0), installed over the 6.17 rootfs
+with `apk add`:
+
+| Works | Not yet |
+|---|---|
+| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, modem (ModemManager), IPA, Bluetooth, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe) | WiFi: the WCN6855 enumerates on a Gen2 link and its power sequence runs (incl. the XO clock handshake on gpio204 like stock and the HDK), but ath11k's firmware load times out in the boot ROM stage ("MHI did not load image over BHI", -EIO); 6.17 with patch 0004 worked |
+
+Not re-checked on 7.3 yet: mobile data, audio output, sensors, camera
+streaming, the battery current sign (reads negative while charging).
+
 ## Open issue: sporadic display corruption
 
 Seen since the first boot, 60 and 120 Hz alike: when the picture changes

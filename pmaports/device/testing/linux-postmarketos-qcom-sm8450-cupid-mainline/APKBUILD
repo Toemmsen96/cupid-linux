@@ -16,11 +16,16 @@
 # out on purpose: the qcom PCIe driver and pwrctrl were reworked upstream;
 # re-port it only if WiFi does not come up.
 #
-# Not booted yet. Keep stable/next as fallbacks: pmbootstrap config kernel next
+# First boot 2026-11-16 (r0): display (no more sporadic corruption), touch,
+# battery, modem, IPA, Bluetooth, audio card, camera stack work. WiFi does
+# not: ath11k's firmware load fails ("MHI did not load image over BHI",
+# -EIO after the 20 s timeout) although the PCIe link trains and the
+# WCN6855 power sequence (incl. the XO clock handshake added in r1) runs.
+# Keep stable/next as fallbacks: pmbootstrap config kernel next
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=0
+pkgrel=1
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -111,7 +116,7 @@ package() {
 sha512sums="
 db5508c3cf8b613b4680022eb785c036bcf8a5c952f8d0b2f3c2c7dc16779cf8bd954e0bca0b0b52451bac61430a687ae73205574f002f3b60de886640ebb9b0  linux-7.3.4.tar.xz
 b505b328f7f0ef9530a908eb8b6ed76496757b456dfdb12e0342d64a45eacf2a3f17f2289c95b38d001b4bf760ac4ab69ad2d49aaa197778dfdac542fa1a8b88  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
-e59b3af51777b6d9c2e2c8dabe65a8266e7da69a3103697869cc7e14d7965b04c4f8b64cdffef4da9d47eaab5475b540849e5f5c0c3962686ac7587f245dd98b  sm8450-xiaomi-cupid.dts
+a84be5cc87b4cc628579ab3202698c223bda244e5b267d471c6902871a886cba134feb4d06928c1e3caec409bd8ed78d2c5d2b8b02f049312f8090bed598768a  sm8450-xiaomi-cupid.dts
 f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd5d905d95de266a54eeb5ab88bd2924cd7e5878dbd4224096  fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
 05f0f5ffa8e5b42052f0ba05a99a463f857ba5c1283b45761cb2917ab6e7fd6d38a4ba7bc40578d7816bb020e2ff27083577c9fd89b454d1854bb32349beba8f  fork-0002-input-touchscreen-add-fts_spi-driver.patch
 258b8914f95d863dd6a58f73e153c0c805edc103e324c55439fd1d4c930fccc1e434c5a32a9ba50c06f44b2f5cbe1c5b7600744804efb8b1be2eb8e0f79f7e10  fork-0003-arm64-dts-qcom-sm8450-add-clock-names-to-mdss.patch

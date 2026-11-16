@@ -183,11 +183,18 @@
 	wcn6855-pmu {
 		compatible = "qcom,wcn6855-pmu";
 
-		pinctrl-0 = <&wlan_en>;
+		pinctrl-0 = <&wlan_en>, <&xo_clk_default>;
 		pinctrl-names = "default";
 
 		wlan-enable-gpios = <&tlmm 80 GPIO_ACTIVE_HIGH>;
 		bt-enable-gpios = <&tlmm 81 GPIO_ACTIVE_HIGH>;
+		/*
+		 * XO clock select handshake (stock cnss: qcom,xo-clk-gpio on
+		 * gpio204). 7.x's power sequencer drives it around WLAN enable;
+		 * without it the chip's boot ROM never took the firmware image
+		 * ("MHI did not load image over BHI").
+		 */
+		xo-clk-gpios = <&tlmm 204 GPIO_ACTIVE_HIGH>;
 
 		vddio-supply = <&pm8350_s10>;
 		vddaon-supply = <&pmr735a_s2>;
@@ -1212,6 +1219,14 @@
 		drive-strength = <16>;
 		bias-disable;
 		output-low;
+	};
+
+	xo_clk_default: xo-clk-state {
+		pins = "gpio204";
+		function = "gpio";
+		drive-strength = <16>;
+		output-low;
+		bias-pull-down;
 	};
 
 	wlan_en: wlan-en-state {
