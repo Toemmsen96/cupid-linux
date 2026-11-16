@@ -25,7 +25,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=1
+pkgrel=2
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -60,6 +60,7 @@ source="
 	0002-fts-single-full-duplex-transfer-for-geni.patch
 	0003-fts-palm-rejection-and-panel-follower.patch
 	0026-fts-look-up-gpios-without-of_get_named_gpio.patch
+	0027-pci-qcom-honour-iommu-cells-in-bdf-to-sid-table.patch
 	0005-ath11k-reset-the-firmware-when-wmi-stops-answering.patch
 	0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
 	0007-pdr-ack-service-up-before-notifying-clients.patch
@@ -116,7 +117,7 @@ package() {
 sha512sums="
 db5508c3cf8b613b4680022eb785c036bcf8a5c952f8d0b2f3c2c7dc16779cf8bd954e0bca0b0b52451bac61430a687ae73205574f002f3b60de886640ebb9b0  linux-7.3.4.tar.xz
 b505b328f7f0ef9530a908eb8b6ed76496757b456dfdb12e0342d64a45eacf2a3f17f2289c95b38d001b4bf760ac4ab69ad2d49aaa197778dfdac542fa1a8b88  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
-a84be5cc87b4cc628579ab3202698c223bda244e5b267d471c6902871a886cba134feb4d06928c1e3caec409bd8ed78d2c5d2b8b02f049312f8090bed598768a  sm8450-xiaomi-cupid.dts
+5eaa53388638326a84f25ca72ee7dec4d3764efc8eae40509027cb36dff3ef6839531ba00a88899989bcd046f269c98a41171d8c9ffc3db206eb72b56df8f0ab  sm8450-xiaomi-cupid.dts
 f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd5d905d95de266a54eeb5ab88bd2924cd7e5878dbd4224096  fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
 05f0f5ffa8e5b42052f0ba05a99a463f857ba5c1283b45761cb2917ab6e7fd6d38a4ba7bc40578d7816bb020e2ff27083577c9fd89b454d1854bb32349beba8f  fork-0002-input-touchscreen-add-fts_spi-driver.patch
 258b8914f95d863dd6a58f73e153c0c805edc103e324c55439fd1d4c930fccc1e434c5a32a9ba50c06f44b2f5cbe1c5b7600744804efb8b1be2eb8e0f79f7e10  fork-0003-arm64-dts-qcom-sm8450-add-clock-names-to-mdss.patch
@@ -124,6 +125,7 @@ f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd
 e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c38412cf36e93c4cb20d257969f3b3ac5bb89b262d746503f1d7a  0002-fts-single-full-duplex-transfer-for-geni.patch
 6d20f8cf621cb38bfc00bdd041d5baa191320b8ab8dfa82ec0a3e9a7749d373f903f4ec1a91da72aa7cbb83407c0cc8aa2648590ea3a067df16699e3a4a53033  0003-fts-palm-rejection-and-panel-follower.patch
 b0670d5e10cb2933ecbdf1c9c0efe825c8553fbc1230fd1adf1d377dc3213b20326e0066948bc30d689652561a4a01f1671adef02ed669c85d869ad1da6b4b13  0026-fts-look-up-gpios-without-of_get_named_gpio.patch
+439c0fe3e3f14d6794a263df0d11ad213d8e089f652c506811df5d4ca473d673fc3630a1f923982b1c794fe5e11ea8cb67c0523036d8cb129fee7f6711487dd9  0027-pci-qcom-honour-iommu-cells-in-bdf-to-sid-table.patch
 64157727f53b104693af1cd7bbcefa15b1db8866e6c9133e0c54da990097fcdeae614d2652539cbb9bce9591a24855c945491bf58a1f8f9ec9c214718ceee901  0005-ath11k-reset-the-firmware-when-wmi-stops-answering.patch
 bd18c3ca122c494e6414f0f1304f237db7cd9e1ccca7e336e3ec7f51e58f93dc1e04c3e0048fe4a47fd8c978d4e20b8e981ad99b9b8594c715b8f941d3e6cc5c  0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
 c37614a0c561893f929594558aadd590d12ffaeaa6b8d9afef7a546a36a30c08b0bd94a19e5fa4208b2b1f24ed95a62d66374f62a49af014b69e82ba4ce27cf8  0007-pdr-ack-service-up-before-notifying-clients.patch
