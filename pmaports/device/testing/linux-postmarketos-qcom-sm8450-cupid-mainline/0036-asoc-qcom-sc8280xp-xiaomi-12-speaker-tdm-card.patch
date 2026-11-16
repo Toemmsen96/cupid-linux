@@ -308,11 +308,11 @@ index 4d48e1012..7d6c4ab47 100644
 +			 SND_SOC_DAIFMT_NB_NF |
 +			 SND_SOC_DAIFMT_I2S,
 +	.tdm_rate = 96000,
-+	/* Stock: 24-bit samples in 32-bit slots; S32 overflowed in the DSP. */
++	/* Stock: 24-bit samples in 32-bit slots; frame sync arrives inverted. */
 +	.tdm_format = SNDRV_PCM_FORMAT_S24_LE,
 +	.tdm_channels = 2,
 +	.tdm_codec_dai_fmt = SND_SOC_DAIFMT_BC_FC |
-+			     SND_SOC_DAIFMT_NB_NF |
++			     SND_SOC_DAIFMT_NB_IF |
 +			     SND_SOC_DAIFMT_DSP_A,
 +	.tdm_codec_sclk = true,
 +	.tdm_hw_vote = true,

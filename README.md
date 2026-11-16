@@ -42,7 +42,7 @@ First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on
 
 | Works (7.3) | Partial / open | Not working |
 |---|---|---|
-| boot, USB networking + SSH, storage, display (120 Hz, no corruption on 7.3), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery, USB-PD charging (~17 W), mobile data (LTE/5G), SMS, VoLTE calls (connect both ways), GPS (standalone), all four cameras in apps (libcamera software ISP, autofocus, stock colour/shading tuning), camera flash, accelerometer, light sensor, compass, auto-rotation, haptics, USB-C headphones, zram swap | internal speakers (worked, distorted again since 2026-11-16, open); call audio (calls connect silently); SMS received at the login screen land in the greeter's Chatty; main camera streaks while the lens is powered; no proximity (stock uses ultrasound) | fingerprint (TrustZone app; feasible with QTEE, see docs/08-fingerprint.md); fast charging (vendor charge pumps); OIS; NFC, IR, USB OTG and FDE untested |
+| boot, USB networking + SSH, storage, display (120 Hz, no corruption on 7.3), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery, USB-PD charging (~17 W), mobile data (LTE/5G), SMS, VoLTE calls (connect both ways), GPS (standalone), all four cameras in apps (libcamera software ISP, autofocus, stock colour/shading tuning), camera flash, accelerometer, light sensor, compass, auto-rotation, haptics, internal speakers, USB-C headphones, zram swap | call audio (calls connect silently); SMS received at the login screen land in the greeter's Chatty; main camera streaks while the lens is powered; no proximity (stock uses ultrasound) | fingerprint (TrustZone app; feasible with QTEE, see docs/08-fingerprint.md); fast charging (vendor charge pumps); OIS; NFC, IR, USB OTG and FDE untested |
 
 The details, measurements and what was ruled out are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md); fixes for problems
@@ -63,7 +63,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Touch | Driver patches: one full-duplex SPI transfer per read (GENI returned zeros for the stock two-transfer shape), super-resolution coordinate decode, palm rejection. Devicetree: `fts,irq-flags` with `IRQF_ONESHOT`, touch rails always on. Firmware `st_fts_l3.ftb` packaged (driver refuses to probe without it). Module autoloaded. | patches 0002, 0003; `firmware-xiaomi-cupid-touchscreen` |
 | WiFi | PCIe link-training retry with endpoint reset, ath11k firmware reset on WMI wedge, missing `vddpmumx`/`vddpmucx` PMU supplies, `max-link-speed = <2>`, WCN rails always on, ASPM forced to `performance`, NetworkManager power save off. | patches 0004, 0005; devicetree; deviceinfo cmdline; device package |
 | Bluetooth | Controller comes up unconfigured (no `local-bd-address`); `bootmac` from `soc-qcom` assigns an address at boot. | device package depends |
-| Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`. USB-C headphones work (verified on cupid). Internal speakers (CS35L41 over tertiary TDM, 96 kHz 24 bit like stock) on the 7.3 kernel with the legacy AudioReach TDM endpoint and a topology built from source; currently distorted (regression under investigation). WCD938x SoundWire interrupt oops on call start fixed. | patches 0006, 0007, 0008; 7.3: 0033-0036, 0038, 0039; devicetree; device package |
+| Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`. USB-C headphones work (verified on cupid). Internal speakers (CS35L41 over tertiary TDM, 96 kHz 24 bit, TDM lane 1, inverted frame sync like stock) on the 7.3 kernel with the legacy AudioReach TDM endpoint and a topology built from source. WCD938x SoundWire interrupt oops on call start fixed. | patches 0006, 0007, 0008; 7.3: 0033-0036, 0038, 0039; devicetree; device package |
 | Battery | `CONFIG_BATTERY_QCOM_BATTMGR` and `pmic-glink` so the ADSP battery manager reports charge level and state. The cupid firmware never answers `model_name`/`time_to_full_avg`; those reads blocked a second each (~70 errors a minute), the driver now stops asking after three timeouts. | kernel config, patch 0010 |
 | Display | Runs at 120 Hz like stock (selectable 60/90/120 via `panel_l3_42_02_0a_dsc.refresh_rate`); at 60 Hz the OLED's PWM dimming flickered. Brightness is kept while the panel is off instead of failing and leaving DSI in HS mode. DSI byte clock rounded to the PLL rate (upstream backport). | patches 0011, 0014, 0015 |
 | Modem data | IPA v5.1 support backported from the pending upstream "SM8450 IPA support" series, devicetree node enabled, plus the upstream IPA v5.x GSI fixes (event rings were never programmed). Mobile data works. | patches 0012, 0013, 0016 |
@@ -80,8 +80,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 
 Not addressed yet: fingerprint (plan in [docs/08-fingerprint.md](docs/08-fingerprint.md)), FM, fast charging (vendor
 charge pumps; expect USB-PD rates), OIS, proximity (ultrasound through the
-audio DSP), call audio. Open investigations: the speaker regression on 7.3
-and the display corruption on the 6.13/6.17 kernels. Details per component
+audio DSP), call audio. Open investigations: the display corruption on the 6.13/6.17 kernels. Details per component
 are in [docs/05-hardware-status.md](docs/05-hardware-status.md).
 
 ## Layout

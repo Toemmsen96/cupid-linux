@@ -24,7 +24,7 @@ fallbacks.
 | Screen | broken | should work | works, glitches | panel `l3_42_02_0a` (matches the bootloader's `msm_drm.dsi_display0`). Black during boot until the first power press (fixed in stable 0021 / next 0011, verified on 6.17 2026-11-16: the bootloader leaves the panel rails on, and after only a reset pulse the panel never leaves sleep, no TE on GPIO 86; one rail power cycle before the first init gives boot text and the greeter). 60 Hz flickered (OLED PWM): 0014 runs it at 120 Hz like stock, verified. Sporadic corruption on interaction (noise bands, shifted/duplicated content) at 60 and 120 Hz while phosh's own screenshot is clean. Not the DSI clock (0 DCS commands / 0 clock changes while glitching; 0015 is kept as a correct upstream fix). Measured on GPIO 86 via /dev/mem at 1 MHz: TE is a 50 % square wave toggling once per frame (rising edges 29.3 Hz, 34.39 ms; frame 17.2 ms = 58.2 Hz in 60 Hz mode). The DPU syncs on rising edges only, so it sees every other frame and free-runs (and assumes 60.0 Hz) in between; transfers then collide with scan-out of the compressed GRAM. At 120 Hz TE is a clean pulse (116.7 Hz); the 60 Hz square wave came from a missing stock timing-switch tail. Stock analysis: the DPU tear check self-triggers after 2*vtotal lines (only ~41 us margin at 120 Hz, every frame at 60 Hz; stock uses 0xfff0), and stock drives the panel with 10 bpc DSC (we sent an 8 bpc PPS). Tried on pkgrel 6 and reverted: tear check sync_cfg_height = 0xfff0 like stock (mainline then never starts a frame: "ctl start interrupt wait failed", confirmed by writing INTF1 TEAR_SYNC_CONFIG_HEIGHT back at runtime) and 10 bpc DSC like stock (static noise on 6.13's DSI host). 0018 keeps only the stock timing-switch tails (TE 116.7 -> 121.7 Hz at 120 Hz); glitches still open |
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
-| Audio | broken | partial | headphones, USB-C audio; speakers broken (7.3) | headphone/codec-DMA path and USB-C audio. Internal speakers (two CS35L41 on tertiary TDM, 7.3 only: 6.13/6.17 lack the legacy AudioReach TDM endpoint) measured clean on 2026-11-16 and play a full-level square wave of the signal's sign since that evening, see [Speakers](#speakers-73). Call audio (voice path through the DSP) not done |
+| Audio | broken | partial | headphones, USB-C audio, speakers (7.3) | headphone/codec-DMA path and USB-C audio. Internal speakers (two CS35L41 on tertiary TDM, 7.3 only: 6.13/6.17 lack the legacy AudioReach TDM endpoint) work: TDM lane 1 and inverted frame sync (kernel r16, device r18), see [Speakers](#speakers-73). Call audio (voice path through the DSP) not done |
 | Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | all four in apps (7.3) | the 6.13 tree has no SM8450 CAMSS; 6.17 streams the OV13B10 ultra-wide. On 7.3 all four sensors stream (OV32B40 front, S5K5E9 telemacro, IMX766 main over C-PHY, OV13B10 ultra-wide) and work in apps through libcamera's simple pipeline with the software ISP (`pmaports/temp/libcamera`: sensor helpers, binned modes, autofocus on the main and macro cameras through the AK7375/DW9800K lens drivers, colour matrices and lens shading from the stock Chromatix tuning). See [Cameras](#cameras) and [Cameras in apps](#cameras-in-apps-libcamera). No hardware ISP, no OIS; main camera shows streaks while the lens is powered (intermittent, open) |
 | Camera flash | works | works | works (7.3) | `pm8350c_flash`, `white:flash` LED: torch verified with the main camera (frame brightness 8 -> 171) |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
@@ -47,7 +47,7 @@ First booted 2026-11-16 (kernel 7.3.4), installed over the 6.17 rootfs with
 
 | Works | Not working / not checked |
 |---|---|
-| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, charging (USB-PD), WiFi (pkgrel 2), Bluetooth, modem: data, SMS, VoLTE calls in both directions without audio (with `cupid-modem-config`), GPS (patched ModemManager), IPA, DSPs, all four cameras in apps with autofocus and stock tuning, camera flash, sensors (accelerometer, light, compass), haptics (r13) | speakers (broken since the evening of 2026-11-16, see [Speakers](#speakers-73)), call audio, proximity, NFC, IR, USB OTG, FDE |
+| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, charging (USB-PD), WiFi (pkgrel 2), Bluetooth, modem: data, SMS, VoLTE calls in both directions without audio (with `cupid-modem-config`), GPS (patched ModemManager), IPA, DSPs, all four cameras in apps with autofocus and stock tuning, camera flash, sensors (accelerometer, light, compass), haptics (r13) | call audio, proximity, NFC, IR, USB OTG, FDE |
 
 WiFi needed an upstream fix (0027): the qcom PCIe driver read `iommu-map`
 as 4-cell entries while sm8450.dtsi uses 5 (`#iommu-cells = <2>`), so the
@@ -110,27 +110,27 @@ Left to try:
 
 ## Speakers (7.3)
 
-**Regression, open (2026-11-16 evening):** the speakers play a full-level
-square wave of the signal's sign: any non-zero sample, even 1 LSB, comes out
-at full scale, so the volume has no effect; digital silence stays silent.
-They measured clean around 19:00 the same day (kernel r11, harmonics 40-60 dB
-down, volume scaling). Now kernel r11 and r13 are both broken, as are a cold
-boot and a rebind of the card and both amplifiers, although every sound
-module (byte-identical r11/r13), the topology and the UCM profile are
-unchanged. Checked and correct: the media formats the kernel sends the DSP
-(traced with a kprobe on `audioreach_set_media_format`: 96 kHz, 24 bit, 2
-channels, 4x32-bit slots, L/R channel map), the TDM bit clock (12.288 MHz),
-both amplifiers' serial port setup. The stock Xiaomi configuration (Forte
-ACDB `PARAM_ID_TDM_INTF_CFG` and HW_EP media format, `backend_conf.xml`,
-`mixer_paths_overlay_static.xml`) matches our framing (internal short sync,
-one bit data delay, 4x32 slots, 96 kHz 24 bit); stock differs in a third
-slot (slot mask 7), the amplifiers' own protection DSP as PCM source,
-analog gain 18 and a top speaker switch GPIO (52). The amplifiers' first
-power-up after boot always times out (`Enable(1) failed: -110`). The
-earlier "32-bit overflow" diagnosis behind the S24 change rested on a live
-word-length test that could not work (the amplifiers latch their format at
-power-up), so that change may have coincided with, not caused, the clean
-state.
+**Distortion fixed (2026-11-17, kernel r16, device r18).** From the evening
+of 2026-11-16 the speakers played a full-level square wave of the signal's
+sign (any non-zero sample at full scale, volume without effect). Two
+causes, both found by comparing with the stock configuration:
+
+- Wrong TDM data lane: stock calibrates the TDM sink with
+  `PARAM_ID_TDM_LANE_CFG` = 0x2 (data1, gpio124 = the amplifiers' input);
+  our topology sent no lane, so the DSP drove data0 (gpio122, the
+  amplifiers' feedback output) and the amp input floated. Topology now
+  passes lane mask 0x2 (device r18).
+- Inverted frame sync: the LPASS TDM frame sync idles high (gpio123 reads
+  high, short low pulses). With the amplifiers at DSP_A/NB_NF they framed
+  every sample wrong; `ctrl_invert_sync_pulse` in the DSP's TDM config has no
+  effect. Setting the CS35L41s to inverted frame sync (`SND_SOC_DAIFMT_NB_IF`,
+  `LRCLK_INV`) gives a clean tone (99 % of the energy at 440 Hz, harmonics
+  35-44 dB down) at the level measured before the breakage (kernel r16).
+
+The earlier "32-bit overflow" diagnosis behind the S24 change rested on a
+live word-length test that could not work (the amplifiers latch their
+format at power-up). The amplifiers' first power-up after boot still times
+out (`Enable(1) failed: -110`, PUP_DONE stays latched afterwards); harmless.
 
 Two CS35L41 amplifiers on the tertiary TDM interface: top at 0x42 (slot 0,
 "SpkrLeft"), bottom at 0x40 (slot 1, "SpkrRight"). The SM8450 ADSP firmware

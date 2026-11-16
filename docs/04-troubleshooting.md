@@ -114,11 +114,9 @@ add `local-bd-address = [ xx xx xx xx xx xx ];` (little-endian) to the
   logged in on the screen PipeWire has no access to the card. USB-C audio and the
   headphone path work.
 - Speakers loud, harsh and deaf to the volume (a square wave of the
-  signal): the open regression described in
-  [05-hardware-status.md](05-hardware-status.md#speakers-73). Keep the
-  volume low; `amixer -D hw:0 cset name='SpkrLeft Digital PCM Volume' 625`
-  (and `SpkrRight`) lowers the amplifiers by 24 dB until PulseAudio next
-  reopens the speaker.
+  signal): kernel older than r16 or device package older than r18 (wrong
+  TDM lane / frame-sync polarity), see
+  [05-hardware-status.md](05-hardware-status.md#speakers-73).
 - No sound in calls: call audio (modem voice through the DSP) is not
   implemented; calls connect silently.
 

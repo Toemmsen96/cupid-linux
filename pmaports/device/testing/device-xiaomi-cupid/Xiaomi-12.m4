@@ -50,9 +50,12 @@ define(`TDM_SYNC_MODE', 0) dnl short sync, bit mode
 define(`TDM_INVERT_SYNC', 0)
 define(`TDM_SYNC_DATA_DELAY', 1) dnl one bit clock
 define(`TDM_STREAM_NAME', `Tertiary TDM0 Playback')
+dnl Lane mask 0x2: data1 (gpio124, mi2s2_data1) carries the amplifier input,
+dnl as in stock's PARAM_ID_TDM_LANE_CFG; data0 (gpio122) is the amplifiers'
+dnl feedback output. Without it the DSP drives data0 and the amp input floats.
 DEVICE_SG_ADD(subgraph-device-tdm-playback.m4, `TERTIARY_TDM_RX_0', TERTIARY_TDM_RX_0,
 	`S24_LE', 96000, 96000, 2, 2,
-	LPAIF_INTF_TYPE_LPAIF, I2S_INTF_TYPE_TERTIARY, 0, DATA_FORMAT_FIXED_POINT,
+	LPAIF_INTF_TYPE_LPAIF, I2S_INTF_TYPE_TERTIARY, 0x2, DATA_FORMAT_FIXED_POINT,
 	0x00004005, 0x00004005, 0x00006050, `TERTIARY_TDM_RX_0')
 dnl
 dnl WCDRX Playback
