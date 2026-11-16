@@ -147,8 +147,10 @@ ModemManager are then the next steps.
   ModemManager overlay from `pmaports/temp/modemmanager` is not installed
   (`apk info -v modemmanager` should show `-r100`).
 - SMS that arrived while the phone was at the login screen are missing in
-  Chatty: the greeter session's Chatty took them; they are in
-  `/var/lib/greetd/.purple/chatty/db/chatty-history.db`.
+  Chatty: before device r17 the greeter session's Chatty took them; they
+  are in `/var/lib/greetd/.purple/chatty/db/chatty-history.db`. r17 keeps
+  Chatty out of the greeter (`ConditionUser=!greetd` drop-in), so SMS wait
+  on the modem until the user's Chatty starts after login.
 
 ## Shows "not charging" on a charger
 

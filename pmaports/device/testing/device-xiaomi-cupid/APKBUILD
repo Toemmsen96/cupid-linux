@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=16
+pkgrel=17
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -56,6 +56,7 @@ source="
 	HiFi.conf
 	phoc.ini
 	xiaomi-cupid.json
+	chatty-not-in-greeter.conf
 	50-cupid-gmobile.conf
 	cupid-gmobile.sh
 	72-cupid-feedbackd.rules
@@ -158,6 +159,9 @@ phosh() {
 		"$subpkgdir"/etc/environment.d/50-cupid-gmobile.conf
 	install -Dm755 "$srcdir"/cupid-gmobile.sh \
 		"$subpkgdir"/etc/profile.d/cupid-gmobile.sh
+	# Keep Chatty out of the login screen session (SMS would land there).
+	install -Dm644 "$srcdir"/chatty-not-in-greeter.conf \
+		"$subpkgdir"/usr/lib/systemd/user/sm.puri.Chatty-daemon.service.d/50-not-in-greeter.conf
 }
 
 openrc() {
@@ -209,4 +213,5 @@ c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f
 960f7f6092fcfeb8acc6ce6ff0b94f81cccf6441d3bee027ed794bddf0f26e6ca397d1787bfa61e84495ec64efd415e10d96c937899b95d97cb77aa6a1031652  Xiaomi-12.m4
 f5a9e68da20da7bc088a9da6be3b90ccd8a598000425613115a1831ed6388163b8583e67db667fad232e7702dc0add7bd1d27dcd1e3ff6afd73bbe9da830707f  module_tdm.m4
 b85db92e5ddeb62cec33a53b089e2125700c2eee32b66bfca7ecf411d37ccbe014a50e7e1290ac18188003a20e942a673e8576e5e4885bbdb2defbb674db7109  subgraph-device-tdm-playback.m4
+eaff3a3996f517706b3ab93264a90970494e3ed459d9c26350647983132023df0aecf9e8c8d159ce8f359639531aa8a8d96cd545e4cc2c73b5f0cc5fde759d80  chatty-not-in-greeter.conf
 "
