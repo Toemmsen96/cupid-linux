@@ -16,11 +16,9 @@
 # out on purpose: the qcom PCIe driver and pwrctrl were reworked upstream;
 # re-port it only if WiFi does not come up.
 #
-# First boot 2026-11-16 (r0): display (no more sporadic corruption), touch,
-# battery, modem, IPA, Bluetooth, audio card, camera stack work. WiFi does
-# not: ath11k's firmware load fails ("MHI did not load image over BHI",
-# -EIO after the 20 s timeout) although the PCIe link trains and the
-# WCN6855 power sequence (incl. the XO clock handshake added in r1) runs.
+# First boot 2026-11-16: display (no more sporadic corruption), touch,
+# battery, WiFi (r2, needs 0027), Bluetooth, modem, IPA, audio card and the
+# camera stack work.
 # Keep stable/next as fallbacks: pmbootstrap config kernel next
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor

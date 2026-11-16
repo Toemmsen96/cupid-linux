@@ -37,15 +37,22 @@ fix that is in this repository but not yet booted.
 
 ## Linux 7.3 (`mainline` kernel package)
 
-First booted 2026-11-16 (kernel 7.3.4, r0), installed over the 6.17 rootfs
-with `apk add`:
+First booted 2026-11-16 (kernel 7.3.4), installed over the 6.17 rootfs with
+`apk add`:
 
-| Works | Not yet |
+| Works | Not yet re-checked |
 |---|---|
-| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, modem (ModemManager), IPA, Bluetooth, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe) | WiFi: the WCN6855 enumerates on a Gen2 link and its power sequence runs (incl. the XO clock handshake on gpio204 like stock and the HDK), but ath11k's firmware load times out in the boot ROM stage ("MHI did not load image over BHI", -EIO); 6.17 with patch 0004 worked |
+| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe) | mobile data, audio output, sensors, camera streaming, the battery current sign (reads negative while charging) |
 
-Not re-checked on 7.3 yet: mobile data, audio output, sensors, camera
-streaming, the battery current sign (reads negative while charging).
+WiFi needed an upstream fix (0027): the qcom PCIe driver read `iommu-map`
+as 4-cell entries while sm8450.dtsi uses 5 (`#iommu-cells = <2>`), so the
+WCN6855 got no BDF-to-SID entry. Its DMA still worked through the Root
+Port's stream, so the firmware download completed on the chip (BHI status
+SUCCESS, SBL running), but its MSIs reached the GIC ITS with the Root
+Port's device ID and were dropped; ath11k gave up after 20 s ("MHI did not
+load image over BHI"). The same parser is in 7.2. The devicetree also got
+the WCN6855 details from the HDK: enable pins start low, swctrl and
+xo-clk GPIOs, vddaon from pm8350_s11, S11/S12 at the stock minimums.
 
 ## Open issue: sporadic display corruption
 
