@@ -113,6 +113,14 @@ add `local-bd-address = [ xx xx xx xx xx xx ];` (little-endian) to the
   [05-hardware-status.md](05-hardware-status.md#speakers-73). Without a user
   logged in on the screen PipeWire has no access to the card. USB-C audio and the
   headphone path work.
+- Speakers loud, harsh and deaf to the volume (a square wave of the
+  signal): the open regression described in
+  [05-hardware-status.md](05-hardware-status.md#speakers-73). Keep the
+  volume low; `amixer -D hw:0 cset name='SpkrLeft Digital PCM Volume' 625`
+  (and `SpkrRight`) lowers the amplifiers by 24 dB until PulseAudio next
+  reopens the speaker.
+- No sound in calls: call audio (modem voice through the DSP) is not
+  implemented; calls connect silently.
 
 ## Remoteprocs, battery, modem
 
@@ -120,7 +128,27 @@ add `local-bd-address = [ xx xx xx xx xx xx ];` (little-endian) to the
 should show adsp, cdsp, slpi (and mpss) running. Battery readings come from
 the ADSP (`qcom-battmgr`), so without adsp there is no battery. The modem
 needs `rmtfs` (`soc-qcom-modem`) before `mpss` will stay up; `qmicli` and
-ModemManager are then the next steps. None of this has been verified on cupid.
+ModemManager are then the next steps.
+
+- Calls stay in "dialing" or incoming calls go to voicemail: no carrier
+  configuration is active, so the modem has no VoLTE.
+  `journalctl -u cupid-modem-config` shows what the service did; it needs
+  the SIM to be known to ModemManager (operator codes it knows: <mcc-mnc>
+  <carrier>, <mcc-mnc> <carrier> and brands on it). Other networks: put the MBN
+  path below `modem_pr/mcfg/configs/mcfg_sw/generic` (e.g.
+  `EU/Vodafone/...`) into `/etc/cupid-modem-config`, then
+  `systemctl restart cupid-modem-config`.
+- Modem keeps crashing at boot (`DOG detects stalled initialization` in
+  `dmesg`) and ModemManager then reports the SIM missing: a carrier
+  configuration was still active at power-on (unclean shutdown). The modem
+  recovers after three resets; `systemctl restart ModemManager` brings the
+  SIM back, `cupid-modem-config` then activates the configuration again.
+- GPS does not start (`Couldn't start GPS engine ... GeneralError`): the
+  ModemManager overlay from `pmaports/temp/modemmanager` is not installed
+  (`apk info -v modemmanager` should show `-r100`).
+- SMS that arrived while the phone was at the login screen are missing in
+  Chatty: the greeter session's Chatty took them; they are in
+  `/var/lib/greetd/.purple/chatty/db/chatty-history.db`.
 
 ## Shows "not charging" on a charger
 
