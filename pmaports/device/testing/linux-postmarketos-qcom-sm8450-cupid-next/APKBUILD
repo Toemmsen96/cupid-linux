@@ -18,7 +18,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-next"
 pkgname=linux-$_flavor
 pkgver=6.17.0_rc1
-pkgrel=6
+pkgrel=7
 pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.17-rc1 base (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -117,7 +117,7 @@ c37614a0c561893f929594558aadd590d12ffaeaa6b8d9afef7a546a36a30c08b0bd94a19e5fa420
 bd27da92de7f0e161134a0c0a18cf57d9e6a74ed8c599006b79e864d405c02b8da62bb02aea6a10c79838f6132d09580f2c2a5e89e5de4dbf6303c1abd655744  0008-apr-install-the-gpr-callback-before-probing.patch
 c740d274fe9d81bb3f92e53235491de91a99066567dae74b56ed66a04b5461bf6f44a050895b55fc854c844eba0660913d04f58c1e276263b23d520d0d0b3729  0009-libbpf-const-correct-strstr-strchr-results.patch
 1c8d59beb620ba71ec48fea0d6447d6076f88d575c747a1cbb3389ca6d4427727ceb7e4b4bf466f58873e7cd8122f51f88c930a3a8e91bd3effb306ef3092053  0010-battmgr-stop-requesting-properties-the-firmware-never-answers.patch
-519ed6d0b8430efc9e4fc3578400379a4fba8a2f318ab2ad83cb81ea084fff97dd205c5f1b788cb2ff7cf135880fb358d7e9e75abe6e1e4141e877ff7ce3d819  0011-panel-l3-42-02-0a-brightness-refresh-rate-and-timing-tails.patch
+c60dcd9c00e2bffab1289f5a6d5b98be5ed2399019c742627169fba7d824231974f97cf238c533ae4db461001f4eead77f0af47c23136100fb73d522b144b08d  0011-panel-l3-42-02-0a-brightness-refresh-rate-and-timing-tails.patch
 cf8b50312687710253114bd84b014cbeff74d03e245dea71885cc69300c439d73c23a9e320d8fdcd6f3d549bfcb58b644ac62b9c805c2238ef9f6ee4fde8b677  0012-ipa-add-ipa-v5.1-for-sm8450.patch
 fff0128071b9c3c897d1098a941ee27c60fe573c48d2f0855b5f9cff9b69f295c887cb6e54b77c48b7ecf8eca18179e8903f52d478c938b71ac30e2c5c2b5694  0013-arm64-dts-sm8450-add-ipa-node.patch
 2eadae975e9e57cb9f7ed839c50dd63b2a31e18cfc81ec2330b59db8f8bdf274544067f73a2b3c099d79fb809765c3e31830eb8cf9b9a5fb786bf56e4ec29ae9  0015-msm-dsi-round-byte-clock-to-the-pll-rate.patch

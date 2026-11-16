@@ -16,11 +16,11 @@ fix that is in this repository but not yet booted.
 | Internal storage | works | works | works | UFS |
 | Battery | broken | should work | works | capacity, status, voltage, current. Xiaomi's firmware inserts BATT_CONSTANT_CURRENT at index 12, shifting temperature and all later battery properties by one: temperature read the 2 A charge current (20000 C), technology 114, and model_name/time_to_full replies had the wrong type and timed out. Patch 0020 translates the ids on xiaomi,cupid (verified on pkgrel 10) and flips the current sign (pkgrel 11); 0010 still caps genuinely unanswered properties |
 | Charging | broken | USB-PD rates only | works (PD) | Xiaomi charger: 9 V USB-PD contract, 1.6 A input limit, ~2 A into the battery (~17 W), verified 2026-11-16. phosh showed "not charging" because the firmware reports the battery current negative while charging and upower 1.91 then forces "discharging"; 0020 negates it (verified with the rebuilt module). The 67/120 W modes need Xiaomi's adapter authentication (`verify_process`/`verify_digest` over the vendor `BC_XM_STATUS` 0x50/0x51 opcodes, the ADSP sends 0x50 notifications that mainline logs as unknown) and the vendor charge-pump handling; not done. On a PC the ADSP sees SDP with a 100 mA input limit until the USB gadget is configured |
-| Screen | broken | should work | works, glitches | panel `l3_42_02_0a` (matches the bootloader's `msm_drm.dsi_display0`). Starts blanked: press power. 60 Hz flickered (OLED PWM): 0014 runs it at 120 Hz like stock, verified. Sporadic corruption on interaction (noise bands, shifted/duplicated content) at 60 and 120 Hz while phosh's own screenshot is clean. Not the DSI clock (0 DCS commands / 0 clock changes while glitching; 0015 is kept as a correct upstream fix). Measured on GPIO 86 via /dev/mem at 1 MHz: TE is a 50 % square wave toggling once per frame (rising edges 29.3 Hz, 34.39 ms; frame 17.2 ms = 58.2 Hz in 60 Hz mode). The DPU syncs on rising edges only, so it sees every other frame and free-runs (and assumes 60.0 Hz) in between; transfers then collide with scan-out of the compressed GRAM. At 120 Hz TE is a clean pulse (116.7 Hz); the 60 Hz square wave came from a missing stock timing-switch tail. Stock analysis: the DPU tear check self-triggers after 2*vtotal lines (only ~41 us margin at 120 Hz, every frame at 60 Hz; stock uses 0xfff0), and stock drives the panel with 10 bpc DSC (we sent an 8 bpc PPS). Tried on pkgrel 6 and reverted: tear check sync_cfg_height = 0xfff0 like stock (mainline then never starts a frame: "ctl start interrupt wait failed", confirmed by writing INTF1 TEAR_SYNC_CONFIG_HEIGHT back at runtime) and 10 bpc DSC like stock (static noise on 6.13's DSI host). 0018 keeps only the stock timing-switch tails (TE 116.7 -> 121.7 Hz at 120 Hz); glitches still open |
+| Screen | broken | should work | works, glitches | panel `l3_42_02_0a` (matches the bootloader's `msm_drm.dsi_display0`). Black during boot until the first power press (fixed in stable 0021 / next 0011, verified on 6.17 2026-11-16: the bootloader leaves the panel rails on, and after only a reset pulse the panel never leaves sleep, no TE on GPIO 86; one rail power cycle before the first init gives boot text and the greeter). 60 Hz flickered (OLED PWM): 0014 runs it at 120 Hz like stock, verified. Sporadic corruption on interaction (noise bands, shifted/duplicated content) at 60 and 120 Hz while phosh's own screenshot is clean. Not the DSI clock (0 DCS commands / 0 clock changes while glitching; 0015 is kept as a correct upstream fix). Measured on GPIO 86 via /dev/mem at 1 MHz: TE is a 50 % square wave toggling once per frame (rising edges 29.3 Hz, 34.39 ms; frame 17.2 ms = 58.2 Hz in 60 Hz mode). The DPU syncs on rising edges only, so it sees every other frame and free-runs (and assumes 60.0 Hz) in between; transfers then collide with scan-out of the compressed GRAM. At 120 Hz TE is a clean pulse (116.7 Hz); the 60 Hz square wave came from a missing stock timing-switch tail. Stock analysis: the DPU tear check self-triggers after 2*vtotal lines (only ~41 us margin at 120 Hz, every frame at 60 Hz; stock uses 0xfff0), and stock drives the panel with 10 bpc DSC (we sent an 8 bpc PPS). Tried on pkgrel 6 and reverted: tear check sync_cfg_height = 0xfff0 like stock (mainline then never starts a frame: "ctl start interrupt wait failed", confirmed by writing INTF1 TEAR_SYNC_CONFIG_HEIGHT back at runtime) and 10 bpc DSC like stock (static noise on 6.13's DSI host). 0018 keeps only the stock timing-switch tails (TE 116.7 -> 121.7 Hz at 120 Hz); glitches still open |
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
 | Audio | broken | partial | card probes | headphone/codec-DMA path and USB-C audio; internal speakers (CS35L41 on tertiary TDM) do not work: the DSP never propagates a media format to the TDM sink, an audioreach gap |
-| Camera | broken | no (6.13); stage 1 on 6.17 | pending | the 6.13 tree has no SM8450 CAMSS. The experimental 6.17 kernel (`next`) carries CAMSS for SM8450, the camera PMIC and the ultra-wide sensor, see [Cameras](#cameras); not booted yet |
+| Camera | broken | no (6.13); ultra-wide on 6.17 | ultra-wide raw capture works (6.17) | the 6.13 tree has no SM8450 CAMSS. On the 6.17 kernel (`next`) the OV13B10 ultra-wide streams 4208x3120 RAW10 through CSIPHY0/CSID0/VFE0 (test pattern and real image verified 2026-11-16), see [Cameras](#cameras). Main, front and macro sensors have no driver yet |
 | Camera flash | works | works | | `pm8350c_flash` |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
 | WiFi | works | works, stabilised | works | patches 0004/0005, PMU supplies, ASPM off, power save off |
@@ -112,11 +112,36 @@ register tables are in the CamX modules. The IFE/IPE processing pipeline has
 no mainline driver either, so the result is raw frames for libcamera's
 software ISP.
 
-Stage 1 in `linux-postmarketos-qcom-sm8450-cupid-next` (compile-tested,
-not booted): CAMSS (0021/0022), the PM8008 with optional interrupt (0023),
+Stage 1 in `linux-postmarketos-qcom-sm8450-cupid-next`, verified on the
+phone 2026-11-16: CAMSS (0021/0022), the PM8008 with optional interrupt (0023),
 CCI0 and the ultra-wide on CSIPHY0 at the OV13B10 default address 0x36. The
 I2C addresses of the other sensors are still to be found (`i2cdetect` on
-the CCI buses once CAMSS is up).
+the CCI buses).
+
+Needed on the phone beyond the Tab S8 patches: camcc enabled with MXC next
+to MMCX (the fork's dtsi has it disabled; MMCX alone leaves TITAN_TOP
+stuck off), `.link_entities` in the SM8450 resources (6.17 calls it
+unconditionally) and PM8008 L5 always on (it is the CCI pull-up rail; with
+it switched off between sessions the first CCI transfer after power-up
+timed out and every stream after the first failed).
+
+Capture by hand (v4l-utils):
+
+```sh
+M="media-ctl -d /dev/media0"; F="fmt:SGRBG10_1X10/4208x3120"
+$M -r
+$M -l '"msm_csiphy0":1->"msm_csid0":0[1]'
+$M -l '"msm_csid0":1->"msm_vfe0_rdi0":0[1]'
+for p in '"ov13b10 4-0036":0' '"msm_csiphy0":0' '"msm_csiphy0":1' \
+         '"msm_csid0":0' '"msm_csid0":1' '"msm_vfe0_rdi0":0' '"msm_vfe0_rdi0":1'; do
+	$M -V "$p[$F]"
+done
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=4208,height=3120,pixelformat=pgAA
+v4l2-ctl -d /dev/video0 --stream-mmap=4 --stream-count=3 --stream-to=/tmp/uw.raw
+```
+
+Frames are packed RAW10 (GRBG), 5264 bytes per line. The sensor is mounted
+rotated by 90 degrees.
 
 ## Kernel patches carried
 

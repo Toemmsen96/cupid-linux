@@ -1,0 +1,58 @@
+panel: l3-42-02-0a: cold start on the first prepare (screen during boot)
+
+The bootloader leaves the panel powered for its splash screen. At the
+first prepare the driver only pulsed reset and sent the init sequence:
+the commands went out without errors, but the panel never left sleep (no
+TE on GPIO 86, measured), the DPU free-ran on its tear-check fallback and
+the screen stayed black through the whole boot until the first
+blank/unblank, which switches the rails off and on. Do that power cycle
+once, before the first init. Verified on 6.17 with the same change: boot
+text, then the greeter, without pressing power.
+
+--- a/drivers/gpu/drm/panel/panel-l3-42-02-0a-dsc.c
++++ b/drivers/gpu/drm/panel/panel-l3-42-02-0a-dsc.c
+@@ -27,6 +27,8 @@
+ 	struct gpio_desc *reset_gpio;
+ 	/* DCS commands are only accepted between prepare and unprepare */
+ 	bool prepared;
++	/* the rails have been switched off at least once since probe */
++	bool cold_started;
+ };
+ 
+ /*
+@@ -273,6 +275,26 @@
+ 		return ret;
+ 	}
+ 
++	/*
++	 * The bootloader leaves the panel powered (splash screen). A reset
++	 * pulse alone does not bring it back into a state where it takes the
++	 * init sequence: the commands go out, but it never leaves sleep (no
++	 * TE) and the screen stays black until the first blank/unblank,
++	 * which switches the rails off. Do that once before the first init.
++	 */
++	if (!ctx->cold_started) {
++		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++		regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
++		msleep(100);
++		ret = regulator_bulk_enable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
++		if (ret < 0) {
++			dev_err(dev, "Failed to enable regulators: %d\n", ret);
++			return ret;
++		}
++		usleep_range(10000, 11000);
++		ctx->cold_started = true;
++	}
++
+ 	l3_42_02_0a_dsc_reset(ctx);
+ 
+ 	ret = l3_42_02_0a_dsc_on(ctx);
+@@ -311,6 +333,8 @@
+ 	int ret;
+ 
+ 	ctx->prepared = false;
++	/* the rails go off below */
++	ctx->cold_started = true;
+ 
+ 	ret = l3_42_02_0a_dsc_off(ctx);
+ 	if (ret < 0)
