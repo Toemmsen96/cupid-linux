@@ -2116,7 +2116,7 @@
 		dvdd-supply = <&cam_l2>;
 
 		orientation = <1>;
-		rotation = <90>;
+		rotation = <270>;
 
 		port {
 			cam_uw_ep: endpoint {
@@ -2150,7 +2150,7 @@
 		dvdd-supply = <&cam_front_dvdd>;
 
 		orientation = <0>;	/* front */
-		rotation = <270>;
+		rotation = <90>;
 
 		port {
 			cam_front_ep: endpoint {
@@ -2187,7 +2187,7 @@
 		dovdd-supply = <&cam_l5>;
 
 		orientation = <1>;	/* back */
-		rotation = <90>;
+		rotation = <270>;
 
 		port {
 			cam_main_ep: endpoint {
@@ -2227,7 +2227,7 @@
 		dovdd-supply = <&cam_l5>;
 
 		orientation = <1>;	/* back */
-		rotation = <90>;
+		rotation = <270>;
 
 		port {
 			cam_macro_ep: endpoint {
