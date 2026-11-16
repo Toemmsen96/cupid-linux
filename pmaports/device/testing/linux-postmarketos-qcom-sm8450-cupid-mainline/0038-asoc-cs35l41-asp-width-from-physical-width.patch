@@ -1,0 +1,60 @@
+From 757d2fee6d3d4134be061eb963cd5999aa15ac38 Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 18:46:04 +0100
+Subject: [PATCH] ASoC: cs35l41: set the ASP width from the physical sample
+ width
+
+The ASP width is the slot the sample sits in, the word length the
+sample itself. hw_params set both from params_width(), so 24-bit samples
+in 32-bit slots (S24_LE, as the Xiaomi 12 speaker TDM backend runs like
+stock) programmed 24-bit slots on a 32-bit-slot interface. Use
+params_physical_width() for the width.
+
+Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+---
+ sound/soc/codecs/cs35l41.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/codecs/cs35l41.c b/sound/soc/codecs/cs35l41.c
+index b2a076706..7acfca3b0 100644
+--- a/sound/soc/codecs/cs35l41.c
++++ b/sound/soc/codecs/cs35l41.c
+@@ -758,7 +758,7 @@ static int cs35l41_pcm_hw_params(struct snd_pcm_substream *substream,
+ {
+ 	struct cs35l41_private *cs35l41 = snd_soc_component_get_drvdata(dai->component);
+ 	unsigned int rate = params_rate(params);
+-	u8 asp_wl;
++	u8 asp_wl, asp_width;
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(cs35l41_fs_rates); i++) {
+@@ -771,7 +771,12 @@ static int cs35l41_pcm_hw_params(struct snd_pcm_substream *substream,
+ 		return -EINVAL;
+ 	}
+ 
++	/*
++	 * The ASP width is the slot, the word length the sample in it: 24-bit
++	 * samples in 32-bit slots (S24_LE) need width 32, word length 24.
++	 */
+ 	asp_wl = params_width(params);
++	asp_width = params_physical_width(params);
+ 
+ 	regmap_update_bits(cs35l41->regmap, CS35L41_GLOBAL_CLK_CTRL,
+ 			   CS35L41_GLOBAL_FS_MASK,
+@@ -780,14 +785,14 @@ static int cs35l41_pcm_hw_params(struct snd_pcm_substream *substream,
+ 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+ 		regmap_update_bits(cs35l41->regmap, CS35L41_SP_FORMAT,
+ 				   CS35L41_ASP_WIDTH_RX_MASK,
+-				   asp_wl << CS35L41_ASP_WIDTH_RX_SHIFT);
++				   asp_width << CS35L41_ASP_WIDTH_RX_SHIFT);
+ 		regmap_update_bits(cs35l41->regmap, CS35L41_SP_RX_WL,
+ 				   CS35L41_ASP_RX_WL_MASK,
+ 				   asp_wl << CS35L41_ASP_RX_WL_SHIFT);
+ 	} else {
+ 		regmap_update_bits(cs35l41->regmap, CS35L41_SP_FORMAT,
+ 				   CS35L41_ASP_WIDTH_TX_MASK,
+-				   asp_wl << CS35L41_ASP_WIDTH_TX_SHIFT);
++				   asp_width << CS35L41_ASP_WIDTH_TX_SHIFT);
+ 		regmap_update_bits(cs35l41->regmap, CS35L41_SP_TX_WL,
+ 				   CS35L41_ASP_TX_WL_MASK,
+ 				   asp_wl << CS35L41_ASP_TX_WL_SHIFT);

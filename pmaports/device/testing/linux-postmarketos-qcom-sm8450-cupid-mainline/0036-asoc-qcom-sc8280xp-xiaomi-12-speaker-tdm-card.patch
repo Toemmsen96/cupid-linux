@@ -4,7 +4,7 @@ Date: Mon, 16 Nov 2026 16:59:20 +0100
 Subject: [PATCH] ASoC: qcom: sc8280xp: add the Xiaomi 12 speaker TDM card
 
 The Xiaomi 12 (cupid) has two CS35L41 speaker amplifiers on the tertiary
-TDM interface. Stock Android runs it at 96 kHz with 32-bit samples in four
+TDM interface. Stock Android runs it at 96 kHz with 24-bit samples in four
 32-bit slots, short frame sync, SoC clock provider, and holds an LPASS
 core vote while it is active ("qcom,mi2s-tdm-is-hw-vote-needed").
 
@@ -33,11 +33,11 @@ run before the DSP graph opens.
 
 Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
 ---
- sound/soc/qcom/sc8280xp.c | 209 ++++++++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 204 insertions(+), 5 deletions(-)
+ sound/soc/qcom/sc8280xp.c | 210 ++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 205 insertions(+), 5 deletions(-)
 
 diff --git a/sound/soc/qcom/sc8280xp.c b/sound/soc/qcom/sc8280xp.c
-index 4d48e1012..ef565acbb 100644
+index 4d48e1012..7d6c4ab47 100644
 --- a/sound/soc/qcom/sc8280xp.c
 +++ b/sound/soc/qcom/sc8280xp.c
 @@ -2,6 +2,7 @@
@@ -283,13 +283,13 @@ index 4d48e1012..ef565acbb 100644
  	card->owner = THIS_MODULE;
  	card->dev = dev;
  	dev_set_drvdata(dev, card);
-@@ -518,6 +686,36 @@ static const struct qcom_snd_soc_common sm8450_priv_data = {
+@@ -518,6 +686,37 @@ static const struct qcom_snd_soc_common sm8450_priv_data = {
  			 SND_SOC_DAIFMT_I2S,
  };
  
 +/*
 + * Xiaomi 12 (cupid): two CS35L41 speaker amplifiers on the tertiary TDM
-+ * interface, run like stock at 96 kHz with 32-bit samples in four 32-bit
++ * interface, run like stock at 96 kHz with 24-bit samples in four 32-bit
 + * slots (top amplifier slot 0, bottom slot 1), short frame sync with a
 + * one bit delay (DSP A), SoC clock provider. The amplifiers run their PLL
 + * from the bit clock. The interface needs the LPASS core votes of stock
@@ -308,7 +308,8 @@ index 4d48e1012..ef565acbb 100644
 +			 SND_SOC_DAIFMT_NB_NF |
 +			 SND_SOC_DAIFMT_I2S,
 +	.tdm_rate = 96000,
-+	.tdm_format = SNDRV_PCM_FORMAT_S32_LE,
++	/* Stock: 24-bit samples in 32-bit slots; S32 overflowed in the DSP. */
++	.tdm_format = SNDRV_PCM_FORMAT_S24_LE,
 +	.tdm_channels = 2,
 +	.tdm_codec_dai_fmt = SND_SOC_DAIFMT_BC_FC |
 +			     SND_SOC_DAIFMT_NB_NF |
@@ -320,7 +321,7 @@ index 4d48e1012..ef565acbb 100644
  static const struct qcom_snd_soc_common sm8475_priv_data = {
  	.driver_name = "sm8475",
  	.dapm_widgets = sc8280xp_dapm_widgets,
-@@ -576,6 +774,7 @@ static const struct of_device_id snd_sc8280xp_dt_match[] = {
+@@ -576,6 +775,7 @@ static const struct of_device_id snd_sc8280xp_dt_match[] = {
  	{ .compatible = "qcom,sm8550-sndcard", .data = &sm8550_priv_data },
  	{ .compatible = "qcom,sm8650-sndcard", .data = &sm8650_priv_data },
  	{ .compatible = "qcom,sm8750-sndcard", .data = &sm8750_priv_data },

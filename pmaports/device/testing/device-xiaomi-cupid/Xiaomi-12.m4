@@ -12,7 +12,7 @@ dnl                                     -> TERTIARY_TDM_RX_0 (speakers)
 dnl   VA_CODEC_DMA_TX_0 / TX_CODEC_DMA_TX_3 -> MultiMedia3/4
 dnl
 dnl Speaker TDM like stock ("TDM-LPAIF-RX-TERTIARY", Android backend_conf):
-dnl 96 kHz, 32-bit samples in four 32-bit slots, short frame sync with a one
+dnl 96 kHz, 24-bit samples in four 32-bit slots, short frame sync with a one
 dnl bit data delay, internal sync (SoC clock provider), data output on. The
 dnl slot mask in use (slots 0/1: top/bottom amplifier) comes from the card's
 dnl dai-link; the device MFC converts the 48 kHz stereo stream.
@@ -51,7 +51,7 @@ define(`TDM_INVERT_SYNC', 0)
 define(`TDM_SYNC_DATA_DELAY', 1) dnl one bit clock
 define(`TDM_STREAM_NAME', `Tertiary TDM0 Playback')
 DEVICE_SG_ADD(subgraph-device-tdm-playback.m4, `TERTIARY_TDM_RX_0', TERTIARY_TDM_RX_0,
-	`S32_LE', 96000, 96000, 2, 2,
+	`S24_LE', 96000, 96000, 2, 2,
 	LPAIF_INTF_TYPE_LPAIF, I2S_INTF_TYPE_TERTIARY, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004005, 0x00004005, 0x00006050, `TERTIARY_TDM_RX_0')
 dnl

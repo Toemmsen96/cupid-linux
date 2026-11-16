@@ -31,7 +31,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=10
+pkgrel=11
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -92,6 +92,7 @@ source="
 	0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
 	0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
 	0037-media-i2c-ov13b10-report-the-crop-rectangles.patch
+	0038-asoc-cs35l41-asp-width-from-physical-width.patch
 "
 builddir="$srcdir/linux-$pkgver"
 
@@ -165,6 +166,7 @@ ef2d5ed97a165eb488e503de9d59225956cd183f9a184bf26073dfbb13db8c08eeb03f45c20748b8
 99faf19411816309304e52eb59e5a8c00584615d25a2da8c359251f2c5a960ac0141162c8006f9c87dbd225ece2aad0eaccd806126f59efbefc6619b667c4d2a  0033-asoc-qcom-audioreach-legacy-tdm-modules.patch
 3fb70150a762cec876fad66e3863ef75d1509f43b231c0e4913af547127448c5b61db008c77c4ade48fac3879fa78970ed9c7ba9b5a1ad2c628d831ac0e0db38  0034-asoc-qcom-q6dsp-advertise-96-khz-tdm-playback.patch
 8c8338aa1f847ad6d51ecfa6472ea177062c2719d3518cdc3665fafa32c440bb8f0e915c7de0f33eba0e130f40c6fc8a754c70150e35c50ec75a27cf35817dda  0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
-daebce1c47622a781430403eae5f4e86da9875183c62ac61842f2a4f84280eea10430a8e133543c5e0c6095e84e53352496432187d49e008669a26d74245fae1  0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
+d7d96f26076a94e7c3ea5a1e1b7af602fb70c41934e8a38e1222fd18e2186721357b5f107090cbde2a4bdec1dab6f6d85e959642aaf67992b844c4adb67673aa  0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
 c223479cdb1e825b9fe8847a5f1dd37d7a851091bea61df5047d3aaa0fa97fd9eed3401af1253a94383b6b436067310676b52ebd56bf163c9f2eac4cbce9cd95  0037-media-i2c-ov13b10-report-the-crop-rectangles.patch
+822be51ea717c2ad3c10f8ee82de8b5d7b71597379aeb9868f8df790a1877ae3854198fbdd03b7e6c93402fe5f5b8684f4561bf6d0b9d33ec4623ffcbb3fa066  0038-asoc-cs35l41-asp-width-from-physical-width.patch
 "
