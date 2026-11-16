@@ -1,0 +1,84 @@
+drm/msm/dpu: single-slice DSC panels and plane check without virtual planes
+
+Two 6.17 (sm8450-mainline next) display regressions on the Xiaomi 12,
+whose panel (l3-42-02-0a) is driven with one 1080-wide DSC slice per line
+(stock topology 1:1:1). The screen stayed black, then garbled.
+
+1. Without virtual planes, the plane check computes the number of mixer
+   stages from crtc_state's mixer count before the mixers are assigned,
+   gets 0 and never fills pipe_cfg: every modeset failed with "invalid
+   source 0x0+0+0" (-E2BIG), phoc's output test failed and the greeter
+   aborted. Use one stage then, as upstream does since.
+
+2. With DSC the CRTC always took two DSC encoders (and two mixers) per
+   interface when the SoC has them. Two merged encoders split each line
+   between them, which needs at least two slices per line; with a single
+   slice the DSI got a different byte count per line than it expected,
+   the command-mode transfer never finished (pp_done timeouts, DCS
+   commands then failed with -110) and the panel showed the first lines
+   followed by garbage. Mark single-slice configs in the encoder and use
+   one DSC encoder for them.
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
+index 2625ad777..dc219a8aa 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
+@@ -1366,7 +1366,14 @@ static struct msm_display_topology dpu_crtc_get_topology(
+ 		num_rt_intf--;
+ 
+ 	if (topology.num_dsc) {
+-		if (dpu_kms->catalog->dsc_count >= num_rt_intf * 2)
++		/*
++		 * Two DSC encoders per interface (merged) only work if the
++		 * panel's line has at least two slices; a single-slice panel
++		 * (Xiaomi 12: one 1080-wide slice, stock topology 1:1:1) got
++		 * garbage and every frame timed out.
++		 */
++		if (topology.num_dsc >= 2 &&
++		    dpu_kms->catalog->dsc_count >= num_rt_intf * 2)
+ 			topology.num_dsc = num_rt_intf * 2;
+ 		else
+ 			topology.num_dsc = num_rt_intf;
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+index 94b06c959..9c4d8a6c2 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -676,11 +676,13 @@ void dpu_encoder_update_topology(struct drm_encoder *drm_enc,
+ 	dsc = dpu_encoder_get_dsc_config(drm_enc);
+ 
+ 	/*
+-	 * Set DSC number as 1 to mark the enabled status, will be adjusted
+-	 * in dpu_crtc_get_topology()
++	 * Set DSC number to mark the enabled status, will be adjusted in
++	 * dpu_crtc_get_topology(): 1 for a panel with a single slice per
++	 * line, which one DSC encoder has to compress whole, 2 when the
++	 * line can be split between two encoders.
+ 	 */
+ 	if (dsc)
+-		topology->num_dsc = 1;
++		topology->num_dsc = dsc->slice_count >= 2 ? 2 : 1;
+ 
+ 	connector = drm_atomic_get_new_connector_for_encoder(state, drm_enc);
+ 	if (!connector)
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
+index 1cd3d04b1..de482323d 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
+@@ -893,7 +893,16 @@ static int dpu_plane_atomic_check_nosspp(struct drm_plane *plane,
+ 	 * rectangle left/right clipping first, then check wide rectangle
+ 	 * splitting in every half next.
+ 	 */
+-	num_stages = (num_lm + 1) / 2;
++	/*
++	 * Without virtual planes the mixers are only assigned later in the
++	 * atomic check, num_lm is still 0 here and the loop below would never
++	 * fill pipe_cfg (every modeset failed with "invalid source 0x0+0+0").
++	 * One mixer pair is always needed then, as upstream does.
++	 */
++	if (dpu_use_virtual_planes)
++		num_stages = (num_lm + 1) / 2;
++	else
++		num_stages = 1;
+ 	/* iterate mixer configs for this plane, to separate left/right with the id */
+ 	for (stage_id = 0; stage_id < num_stages; stage_id++) {
+ 		struct drm_rect mixer_rect = {

@@ -18,7 +18,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-next"
 pkgname=linux-$_flavor
 pkgver=6.17.0_rc1
-pkgrel=5
+pkgrel=6
 pkgdesc="Mainline kernel fork for the Xiaomi 12 (cupid), 6.17-rc1 base (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -70,6 +70,7 @@ source="
 	0022-clk-qcom-camcc-sm8450-park-rcgs-on-xo.patch
 	0023-mfd-qcom-pm8008-make-the-interrupt-optional.patch
 	0024-media-i2c-ov13b10-devicetree-support.patch
+	0025-drm-msm-dpu-single-slice-dsc-and-plane-check.patch
 "
 builddir="$srcdir/$_repo-$_commit"
 
@@ -127,4 +128,5 @@ f4feaef253b23f04fb024ce5f8f3e6eb99b1dc16d09b06f19e193c195b16801134cbbe26361faefd
 20c271df0a5e9fae6d4f81d640ef7643cad7815356a69d54f9b72c4947cd74d717716e97881e6005091b7ec4aae06e10d9dbc95b9f9596d0d200647e4c63e426  0022-clk-qcom-camcc-sm8450-park-rcgs-on-xo.patch
 85e3ac9a5f696d60e8156fece7802b1e6cd45d2119ec1ddd26c69a6eeebcbbb8cb54213cb41427610240ae14e5c2261436dfd180375e7d1185e3480e63a679e6  0023-mfd-qcom-pm8008-make-the-interrupt-optional.patch
 40159b6398e8412104659163ad2833aa240f4bbf36c59b382e0f741d5361db6bf815ed5095b0fe2c79aaca5ba6cc6f899f8e55a2c98edbd4d8a91cc6441d8fd7  0024-media-i2c-ov13b10-devicetree-support.patch
+253c4dc08ec2da1bbab45bd172d9f64d4adc3d8f278fe364c7ed76727e94f827f099bbcf8febb32802341b0738393b44a2cb43aec7e906e225ac07a9839b8e93  0025-drm-msm-dpu-single-slice-dsc-and-plane-check.patch
 "
