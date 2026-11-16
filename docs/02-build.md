@@ -21,7 +21,9 @@ scripts/build.sh                 # packages + image + vbmeta
 ```
 
 `build.sh` runs `sync.sh`, builds `firmware-xiaomi-cupid`,
-`device-xiaomi-cupid` and the selected kernel package, then
+`device-xiaomi-cupid`, the selected kernel package and the overlays in
+`pmaports/temp/` (`TEMP_PACKAGES` in `scripts/env.sh`: libcamera with the
+camera support, ModemManager with the GPS fix), then
 `pmbootstrap install --single-partition`, `pmbootstrap export out/` and
 `avbtool make_vbmeta_image`.
 
@@ -33,7 +35,9 @@ Useful variants:
 | `scripts/build.sh image` | skip the explicit package build and only (re)install the image |
 | `scripts/build.sh kconfig` | run pmbootstrap's kconfig check against the kernel config |
 | `CUPID_UI=console scripts/build.sh` | console UI, the safest first boot |
-| `CUPID_KERNEL=next scripts/build.sh` | the experimental 6.17 kernel |
+| `CUPID_KERNEL=mainline scripts/build.sh` | the Linux 7.3 kernel (what the phone runs now) |
+| `CUPID_KERNEL=next scripts/build.sh` | the 6.17 fork kernel |
+| `scripts/pmb build --arch aarch64 libcamera` | rebuild one overlay package (`--arch` matters for "arch all" packages) |
 | `CUPID_PASSWORD=secret scripts/build.sh` | user password in the image (default `<password>`) |
 
 The kernel variant and UI are stored in the config, so `scripts/pmb config
@@ -41,7 +45,8 @@ kernel next` and `scripts/pmb config ui phosh` work as well.
 
 ## Editing packages
 
-Edit under `pmaports/device/testing/` in this repository, not in
+Edit under `pmaports/device/testing/` (and `pmaports/temp/` for the
+overlays of upstream packages) in this repository, not in
 `work/pmaports/`. `sync.sh` recomputes the sha512 of local source files and
 copies the directories over. After changing the devicetree, check it without
 a kernel build:

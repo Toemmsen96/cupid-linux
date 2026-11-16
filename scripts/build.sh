@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build the postmarketOS image for the Xiaomi 12.
 #
-#   scripts/build.sh              packages + image + vbmeta, into out/
+#   scripts/build.sh              packages (incl. pmaports/temp overlays) + image + vbmeta, into out/
 #   scripts/build.sh kernel       (re)build the selected kernel package only
 #   scripts/build.sh image        skip the explicit package build, just install
 #   scripts/build.sh kconfig      run pmbootstrap's kconfig check on the kernel
@@ -46,6 +46,10 @@ case "$1" in
 	"")
 		echo "==> building packages (the kernel takes a while)"
 		pmb build firmware-xiaomi-cupid device-xiaomi-cupid "$kernel_pkg"
+		# Overlays of upstream packages (pmaports/temp: libcamera with the
+		# camera support, ModemManager with the GPS fix); "arch all" ones
+		# default to the host architecture, so ask for the phone's.
+		[ -z "$TEMP_PACKAGES" ] || pmb build --arch aarch64 $TEMP_PACKAGES
 		;;
 	*)
 		die "unknown command: $1"

@@ -37,11 +37,12 @@ written.
 
 ## Status on real hardware
 
-First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on 2026-11-12.
+First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on
+2026-11-12; since 2026-11-16 it runs the Linux 7.3 `mainline` kernel package.
 
-| Works | Partial / open | Not working |
+| Works (7.3) | Partial / open | Not working |
 |---|---|---|
-| boot, USB networking + SSH, storage, display (120 Hz), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery level, mobile data (LTE/5G), USB-C headphones, zram swap; on the 7.3 kernel also the internal speakers and all four cameras (raw, libcamera software ISP) | display shows sporadic corruption on interaction (6.13); calls/SMS untested; camera tuning, autofocus | haptics (driver crashes, disabled), motion sensors (light works), fingerprint; NFC driver loads, untested |
+| boot, USB networking + SSH, storage, display (120 Hz, no corruption on 7.3), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery, USB-PD charging (~17 W), mobile data (LTE/5G), SMS, VoLTE calls (connect both ways), GPS (standalone), all four cameras in apps (libcamera software ISP, autofocus, stock colour/shading tuning), camera flash, accelerometer, light sensor, compass, auto-rotation, haptics, USB-C headphones, zram swap | internal speakers (worked, distorted again since 2026-11-16, open); call audio (calls connect silently); SMS received at the login screen land in the greeter's Chatty; main camera streaks while the lens is powered; no proximity (stock uses ultrasound) | fingerprint (TrustZone only); fast charging (vendor charge pumps); OIS; NFC, IR, USB OTG and FDE untested |
 
 The details, measurements and what was ruled out are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md); fixes for problems
@@ -62,34 +63,39 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Touch | Driver patches: one full-duplex SPI transfer per read (GENI returned zeros for the stock two-transfer shape), super-resolution coordinate decode, palm rejection. Devicetree: `fts,irq-flags` with `IRQF_ONESHOT`, touch rails always on. Firmware `st_fts_l3.ftb` packaged (driver refuses to probe without it). Module autoloaded. | patches 0002, 0003; `firmware-xiaomi-cupid-touchscreen` |
 | WiFi | PCIe link-training retry with endpoint reset, ath11k firmware reset on WMI wedge, missing `vddpmumx`/`vddpmucx` PMU supplies, `max-link-speed = <2>`, WCN rails always on, ASPM forced to `performance`, NetworkManager power save off. | patches 0004, 0005; devicetree; deviceinfo cmdline; device package |
 | Bluetooth | Controller comes up unconfigured (no `local-bd-address`); `bootmac` from `soc-qcom` assigns an address at boot. | device package depends |
-| Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`, topology symlink to the HDK topology. USB-C headphones work (verified on cupid). Internal speakers (CS35L41 over tertiary TDM) work on the 7.3 kernel with the legacy AudioReach TDM endpoint and a topology built from source. | patches 0006, 0007, 0008; 7.3: 0033-0036; devicetree; device package |
+| Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`. USB-C headphones work (verified on cupid). Internal speakers (CS35L41 over tertiary TDM, 96 kHz 24 bit like stock) on the 7.3 kernel with the legacy AudioReach TDM endpoint and a topology built from source; currently distorted (regression under investigation). WCD938x SoundWire interrupt oops on call start fixed. | patches 0006, 0007, 0008; 7.3: 0033-0036, 0038, 0039; devicetree; device package |
 | Battery | `CONFIG_BATTERY_QCOM_BATTMGR` and `pmic-glink` so the ADSP battery manager reports charge level and state. The cupid firmware never answers `model_name`/`time_to_full_avg`; those reads blocked a second each (~70 errors a minute), the driver now stops asking after three timeouts. | kernel config, patch 0010 |
 | Display | Runs at 120 Hz like stock (selectable 60/90/120 via `panel_l3_42_02_0a_dsc.refresh_rate`); at 60 Hz the OLED's PWM dimming flickered. Brightness is kept while the panel is off instead of failing and leaving DSI in HS mode. DSI byte clock rounded to the PLL rate (upstream backport). | patches 0011, 0014, 0015 |
 | Modem data | IPA v5.1 support backported from the pending upstream "SM8450 IPA support" series, devicetree node enabled, plus the upstream IPA v5.x GSI fixes (event rings were never programmed). Mobile data works. | patches 0012, 0013, 0016 |
-| Haptics, NFC | AW8697 vibration motor driver (reworked and enabled in the 7.3 kernel; the first version hung probe on 6.13), NXP SN100T NFC node for `nxp-nci-i2c`, touch driver and firmware in the initramfs (unl0kr input for FDE). | patch 0019; devicetree; device and firmware packages |
+| Calls, SMS | SMS work as is. Calls need VoLTE (no 2G/3G in Switzerland), and the modem only starts IMS with an active carrier configuration, which nothing selected on Linux: `cupid-modem-config` loads and activates the SIM's MBN over QMI PDC after boot and deactivates it at shutdown (active at power-on it stalls the modem start-up). Calls ring and connect in both directions; no call audio yet. | device package (`cupid-modem-config`) |
+| GPS | The modem rejects QMI LOC event registration without a client type and will not start a session before one; patched ModemManager registers first as the Android framework client. Standalone GNSS through `mmcli`/geoclue. | `pmaports/temp/modemmanager` |
+| Cameras | CAMSS for SM8450 with C-PHY, drivers for the OV32B40 front, S5K5E9 macro and IMX766 main camera, AK7375/DW9800K autofocus, libcamera overlay with sensor helpers, binned modes, autofocus and colour/shading tuning generated from the stock Chromatix files (`scripts/camx-tuning.py`). | 7.3: 0021-0032, 0037; `pmaports/temp/libcamera` |
+| Sensors | SLPI with hexagonrpcd, the sensor registry copied from this unit's persist partition, iio-sensor-proxy through libssc: accelerometer, light and compass. | device and firmware packages |
+| Haptics, NFC | AW8697 vibration motor driver: chip setup off the probe path, stops at the first I2C error (the first version hung probe for minutes on 6.13); works with feedbackd on 7.3. NXP SN100T NFC node for `nxp-nci-i2c`, touch driver and firmware in the initramfs (unl0kr input for FDE). | patch 0019; devicetree; device and firmware packages |
 | Swap | zstd/lz4 zram backends (pmOS asks for zstd, the kernel only had LZO). | kernel config |
 | Thermal | 85 C passive cooling maps for all CPU zones (`sm8450.dtsi` has none, so the SoC could only hit its critical trip). | devicetree |
 | A/B slots | `soc-qcom-qbootctl` marks the slot successful; the previous cupid package never built its openrc subpackage, so ABL rolled back after about seven boots. | device package |
 | Phosh | Display scale 2, punch-hole cutout definition for gmobile. | device package `-phosh` |
 | Firmware | Fetched from GitHub instead of git.mainlining.org (which has been returning 502); the modem blob is included in GitHub's archive despite being in LFS. | `firmware-xiaomi-cupid` |
 
-Not addressed yet: fingerprint, NFC, FM, fast charging (vendor charge
-pumps; expect USB-PD rates), camera autofocus/OIS and tuning, sensors (need the SLPI and a
-userspace sensor stack), haptics. Open investigations: the display corruption
-(TE is clean at 120 Hz; stock drives DSC with 10 bpc over RGB101010, which
-6.13's DSI host cannot do yet). Details per component are in
-[docs/05-hardware-status.md](docs/05-hardware-status.md).
+Not addressed yet: fingerprint (TrustZone), FM, fast charging (vendor
+charge pumps; expect USB-PD rates), OIS, proximity (ultrasound through the
+audio DSP), call audio. Open investigations: the speaker regression on 7.3
+and the display corruption on the 6.13/6.17 kernels. Details per component
+are in [docs/05-hardware-status.md](docs/05-hardware-status.md).
 
 ## Layout
 
 ```
 pmaports/device/testing/
-  device-xiaomi-cupid/                    deviceinfo, UCM, phosh, modules, NM config
+  device-xiaomi-cupid/                    deviceinfo, UCM, topology, phosh, modules, services
   firmware-xiaomi-cupid/                  remoteproc/GPU/IPA blobs + touch firmware
   linux-postmarketos-qcom-sm8450-cupid/   6.13-rc3 kernel: config, devicetree, patches
   linux-postmarketos-qcom-sm8450-cupid-next/  6.17-rc1 kernel (display, ultra-wide camera)
   linux-postmarketos-qcom-sm8450-cupid-mainline/  Linux 7.3 from kernel.org + cupid patches
-scripts/      setup, sync, build, flash, stock dump, sdcard backup, devicetree check, pmb wrapper
+pmaports/temp/   overlays of upstream packages: libcamera (cameras), modemmanager (GPS)
+scripts/      setup, sync, build, flash, stock dump, sdcard backup, devicetree check, pmb wrapper,
+              camx-sensormodule.py / camx-tuning.py (stock camera module and tuning decoders)
 docs/         prerequisites, build, install, troubleshooting, hardware status, Arch, firmware
 arch/         Arch Linux ARM rootfs builder and kernel PKGBUILD (phase 2)
 ```
@@ -100,17 +106,17 @@ Build output lands in `out/` (symlinks into the pmbootstrap work directory):
 ## Choosing the kernel and UI
 
 ```sh
-scripts/pmb config kernel next     # or: stable (default, 6.13-rc3), mainline (7.3)
+scripts/pmb config kernel mainline # 7.3, recommended; or: stable (6.13-rc3), next (6.17-rc1)
 scripts/pmb config ui console      # black screen + SSH is the safest first boot
 scripts/build.sh image             # re-install without rebuilding packages
 ```
 
-Three kernel packages: `stable` (sm8450-mainline fork, 6.13-rc3, the most
-tested), `next` (the fork's 6.17-rc1 branch: display, touch, WiFi and the
-ultra-wide camera verified) and `mainline` (Linux 7.3 stable from
-kernel.org with the fork-only drivers and our fixes as patches; not booted
-yet). `CUPID_KERNEL=mainline scripts/build.sh kernel` builds only the
-kernel package; on a running phone it can be installed with
+Three kernel packages: `mainline` (Linux 7.3 stable from kernel.org with
+the fork-only drivers and our fixes as patches; what the phone runs, and the
+only one with speakers, cameras in apps and haptics),
+`stable` (sm8450-mainline fork, 6.13-rc3, the first one booted) and `next`
+(the fork's 6.17-rc1 branch). `CUPID_KERNEL=mainline scripts/build.sh kernel`
+builds only the kernel package; on a running phone it can be installed with
 `apk add` over SSH, its hook rewrites the boot partition.
 
 `scripts/pmb` is pmbootstrap with this repository's config; any pmbootstrap
