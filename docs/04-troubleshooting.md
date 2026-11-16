@@ -119,3 +119,25 @@ should show adsp, cdsp, slpi (and mpss) running. Battery readings come from
 the ADSP (`qcom-battmgr`), so without adsp there is no battery. The modem
 needs `rmtfs` (`soc-qcom-modem`) before `mpss` will stay up; `qmicli` and
 ModemManager are then the next steps. None of this has been verified on cupid.
+
+## Shows "not charging" on a charger
+
+Fixed in kernel pkgrel 11 (patch 0020). Older kernels report the battery
+current with the firmware's sign, negative while charging, and upower then
+shows "discharging" although the battery charges (check
+`/sys/class/power_supply/qcom-battmgr-bat/status` and `capacity`). On a PC
+port the ADSP sees a plain USB port and limits the input to 100 mA until the
+USB gadget is configured, which is barely more than the phone uses.
+
+## Phone runs warm
+
+Measure first: `/proc/interrupts` twice, 10 s apart. Measured on 2026-11-16
+(screen off, on a charger): ~1500 wakeups/s, about 1000 of them from audio.
+Phosh Mobile Settings keeps two 25 Hz level meters open while it runs (even
+in the background), so the microphone records continuously and the ADSP runs
+an AudioReach graph (~120 GPR messages/s). Close the app; `pactl list short
+sources` should then show the sources SUSPENDED. Other known costs: WiFi
+power save is off on purpose (see WiFi above), and charging at ~2 A heats
+the battery to ~38 C. Suspend on idle only happens on battery after 15
+minutes (GNOME default) and has not been verified on this kernel yet; an
+open SSH session blocks it.
