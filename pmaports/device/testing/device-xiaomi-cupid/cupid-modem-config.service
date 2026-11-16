@@ -1,0 +1,13 @@
+[Unit]
+Description=Activate the modem carrier configuration (VoLTE) for the SIM
+After=ModemManager.service tqftpserv.service
+Wants=ModemManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/cupid-modem-config
+RemainAfterExit=yes
+TimeoutStartSec=360
+
+[Install]
+WantedBy=multi-user.target

@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=14
+pkgrel=15
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -61,6 +61,8 @@ source="
 	72-cupid-feedbackd.rules
 	cupid-sensor-registry.sh
 	cupid-sensor-registry.service
+	cupid-modem-config.py
+	cupid-modem-config.service
 	90-device-xiaomi-cupid.preset
 	81-libssc-xiaomi-cupid.rules
 	audioreach-topology-$_tplg_commit.tar.gz::https://github.com/linux-msm/audioreach-topology/archive/$_tplg_commit.tar.gz
@@ -167,7 +169,7 @@ openrc() {
 
 systemd() {
 	install_if="$pkgname=$pkgver-r$pkgrel systemd"
-	depends="hexagonrpcd-systemd"
+	depends="hexagonrpcd-systemd python3"
 
 	# Copies this unit's sensor calibration from persist before
 	# hexagonrpcd-sdsp starts; both enabled by the preset.
@@ -175,6 +177,12 @@ systemd() {
 		"$subpkgdir"/usr/libexec/cupid-sensor-registry
 	install -Dm644 "$srcdir"/cupid-sensor-registry.service \
 		"$subpkgdir"/usr/lib/systemd/system/cupid-sensor-registry.service
+	# Activates the SIM's carrier configuration (VoLTE) in the modem;
+	# enabled by the preset.
+	install -Dm755 "$srcdir"/cupid-modem-config.py \
+		"$subpkgdir"/usr/libexec/cupid-modem-config
+	install -Dm644 "$srcdir"/cupid-modem-config.service \
+		"$subpkgdir"/usr/lib/systemd/system/cupid-modem-config.service
 	install -Dm644 "$srcdir"/90-device-xiaomi-cupid.preset \
 		"$subpkgdir"/usr/lib/systemd/system-preset/90-device-xiaomi-cupid.preset
 }
@@ -193,7 +201,9 @@ c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f
 046e5b8d40e83b7e172e9f51ff62f4568827492e18ef394a114923c99bf7b33e060be42e3ec9eb4174cc8326538f35e1130733c6add2dc8621498ae723f1b451  72-cupid-feedbackd.rules
 50faec2fd6507d58a0cb8032f7d909b6148a18db17e194ad920aae4f25ebd3f1d5a12207414e8aa6510dd20a0cec0ccc530d2d21cfb23e67b073a00cf944ae12  cupid-sensor-registry.sh
 789c3be3bc9c288fde49a6568e7175759ab068bb73fac134c76b755dacdc9e0540ee03a504586d0c661094e5344a3c220bd6f5c6143da8ecf45a32fb3f146409  cupid-sensor-registry.service
-7c0dd13c2f73f920acf98842e3d01abf457999ce90fb472dc061f71e73dc82adcd0fdb4657a5553aa94439a11b7f94a9cff130fd98f2ddeebf53dfc6fb66e302  90-device-xiaomi-cupid.preset
+3209e3b55177c731620eb7ac0394293c6a61f648d4444e24e0046019eaedce706967d9d02189b566d6285933adc8e24680d83b23fbdf009b46cabfc6b37e827f  cupid-modem-config.py
+ee637fb641f13eff8383a9b992eb723618a0a5abfbf17c242ceeeaad7e035bac8caecf4579914bab887f709ceb09435ea212d6f4022aa75f9cc3fbd4fd0c5ce7  cupid-modem-config.service
+60de69204fa30e17ce48362fb4afcde3f97262f33880f26d56c400c817e2fd27a64c3ee8539c461cd9242bbabdca395fb35af3cc35647b66cd29ccd1ee21e82b  90-device-xiaomi-cupid.preset
 2f47bcd412f51054f38642c458ca6811de5096630305335ac82c70dbd742ba4a6034154054d042f834250651618823e875f8f70f7fe027ed3dc90b626fe49270  81-libssc-xiaomi-cupid.rules
 6c33f96ca1b9a127758bf8f9ff2df087c015bfae1f8503ec2d2601f952ce957eb9642cfbfc0df80db3fda8cd445537f80e3f903c2c681f4e5abdd3d8fb2a73d6  audioreach-topology-d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037.tar.gz
 960f7f6092fcfeb8acc6ce6ff0b94f81cccf6441d3bee027ed794bddf0f26e6ca397d1787bfa61e84495ec64efd415e10d96c937899b95d97cb77aa6a1031652  Xiaomi-12.m4
