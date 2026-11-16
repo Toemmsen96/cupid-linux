@@ -20,7 +20,7 @@ fix that is in this repository but not yet booted.
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
 | Audio | broken | partial | card probes | headphone/codec-DMA path and USB-C audio; internal speakers (CS35L41 on tertiary TDM) do not work: the DSP never propagates a media format to the TDM sink, an audioreach gap |
-| Camera | broken | no (6.13); ultra-wide on 6.17; ultra-wide, front, macro on 7.3 | raw capture works (6.17, 7.3) | the 6.13 tree has no SM8450 CAMSS. On the 6.17 kernel (`next`) the OV13B10 ultra-wide streams 4208x3120 RAW10 through CSIPHY0/CSID0/VFE0 (test pattern and real image verified 2026-11-16). On 7.3 (`mainline`, pkgrel 3) the OV32B40 front camera also streams 3264x2448 RAW10 through CSIPHY3/CSID1/VFE1 (real image verified 2026-11-16), and the S5K5E9 telemacro 2592x1944 RAW10 through CSIPHY1 (pkgrel 4, colour bars and real image 2026-11-16), see [Cameras](#cameras). The main camera (IMX766) needs C-PHY |
+| Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | raw capture works (6.17, 7.3) | the 6.13 tree has no SM8450 CAMSS. On the 6.17 kernel (`next`) the OV13B10 ultra-wide streams 4208x3120 RAW10 through CSIPHY0/CSID0/VFE0 (test pattern and real image verified 2026-11-16). On 7.3 (`mainline`, pkgrel 3) the OV32B40 front camera also streams 3264x2448 RAW10 through CSIPHY3/CSID1/VFE1 (real image verified 2026-11-16), and the S5K5E9 telemacro 2592x1944 RAW10 through CSIPHY1 (pkgrel 4, colour bars and real image 2026-11-16), and the IMX766 main camera 4096x3072 RAW10 over three C-PHY trios into CSIPHY2 (pkgrel 5, C-PHY backport plus an SM8450 sequence, colour bars and real image 2026-11-16), see [Cameras](#cameras). Raw frames only: no ISP, autofocus or OIS |
 | Camera flash | works | works | | `pm8350c_flash` |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
 | WiFi | works | works, stabilised | works | patches 0004/0005, PMU supplies, ASPM off, power save off |
@@ -42,7 +42,7 @@ First booted 2026-11-16 (kernel 7.3.4), installed over the 6.17 rootfs with
 
 | Works | Not yet re-checked |
 |---|---|
-| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe), front and macro camera streaming (OV32B40 pkgrel 3, S5K5E9 pkgrel 4) | mobile data, audio output, sensors, ultra-wide streaming, the battery current sign (reads negative while charging) |
+| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe), front, macro and main camera streaming (OV32B40 pkgrel 3, S5K5E9 pkgrel 4, IMX766 pkgrel 5) | mobile data, audio output, sensors, ultra-wide streaming, the battery current sign (reads negative while charging) |
 
 WiFi needed an upstream fix (0027): the qcom PCIe driver read `iommu-map`
 as 4-cell entries while sm8450.dtsi uses 5 (`#iommu-cells = <2>`), so the
@@ -131,7 +131,8 @@ Xiaomi 14 Ultra port
 ([dianqk/nixos-android-devices](https://github.com/dianqk/nixos-android-devices),
 `pkgs/linux-kernel/sm8650/aurora/ov32b40.patch`), carried unchanged as
 mainline patch 0028. The S5K5E9 driver (0029) is ours, with the register
-and power sequences of the stock CamX module. The IMX766 has none. The IFE/IPE processing pipeline has
+and power sequences of the stock CamX module, and so is the IMX766 driver
+(0032). The IFE/IPE processing pipeline has
 no mainline driver either, so the result is raw frames for libcamera's
 software ISP.
 
@@ -215,6 +216,46 @@ reset gpio128, AVDD 2.8 V from an external LDO on gpio71 (BOB), DVDD
 `msm_csiphy1` and `fmt:SGRBG10_1X10/2592x1944`, pixelformat `pgAA`;
 3248 bytes per line. `test_pattern=2` gives colour bars. The lens is fixed
 focus at a few centimetres.
+
+### Main camera (7.3)
+
+The IMX766 (chip ID 0x0766 read on this phone, so not the IMX700/707
+alternative modules) sits at 0x10 on CCI0 bus 1 and sends over **MIPI
+C-PHY**, three trios into CSIPHY2. Mainline CAMSS is D-PHY only; the
+mainline package carries:
+
+- 0030: David Heidelberg's C-PHY series for CAMSS (v9, on linux-media,
+  tested upstream on the OnePlus 6 with sdm845), rebased onto 7.3;
+- 0031: the SM8450 CSIPHY (v2.1.0) C-PHY sequence, taken from the
+  downstream camera-kernel (`cam_csiphy_2_1_0_hwreg.h`, base sequence plus
+  the data rate entries for up to 2.1 Gsps), and the PHY type bit in CSID
+  680;
+- 0032: the sensor driver, one 4096x3072 2x2-binned mode at 30 fps,
+  1713.6 Msps per trio (link frequency 856.8 MHz, half the symbol rate).
+
+Rails: AVDD 1.8 V external LDO on gpio70 (from pm8350c S1), second analogue
+rail PM8008 L6 at 3.1 V, DVDD 1.104 V LDO on gpio2 (from pm8350 S12), I/O
+L5; MCLK2 on gpio102, reset gpio126. The module streams mirrored and
+flipped (0x0101 = 3, it is mounted upside down), which makes the colour
+order BGGR; the test pattern generator comes after the readout and still
+decodes as RGGB. The OIS (BU24618) and the autofocus actuator are not
+driven, so the lens rests where it falls.
+
+```sh
+M="media-ctl -d /dev/media0"; F="fmt:SBGGR10_1X10/4096x3072"
+$M -r
+$M -l '"msm_csiphy2":1->"msm_csid0":0[1]'
+$M -l '"msm_csid0":1->"msm_vfe0_rdi0":0[1]'
+for p in '"imx766 5-0010":0' '"msm_csiphy2":0' '"msm_csiphy2":1' \
+         '"msm_csid0":0' '"msm_csid0":1' '"msm_vfe0_rdi0":0' '"msm_vfe0_rdi0":1'; do
+	$M -V "$p[$F]"
+done
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=4096,height=3072,pixelformat=pBAA
+v4l2-ctl -d /dev/video0 --stream-mmap=4 --stream-count=3 --stream-to=/tmp/main.raw
+```
+
+5120 bytes per line. Analogue gain is Sony's 16384 / (16384 - code), up to
+16128 (64x); exposure is in lines of 8.7 us.
 
 ## Kernel patches carried
 
