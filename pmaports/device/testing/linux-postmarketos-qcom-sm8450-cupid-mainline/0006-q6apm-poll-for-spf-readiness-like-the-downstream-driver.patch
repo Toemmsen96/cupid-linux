@@ -1,0 +1,56 @@
+ASoC: qcom: q6apm: poll for SPF readiness like the downstream driver
+
+The signal processing framework is not up as soon as the ADSP is; asking
+once loses the race and every graph operation fails afterwards (-EIO on
+playback). Re-send APM_CMD_GET_SPF_STATE every 50 ms for up to 10 s, like
+spf_core_is_apm_ready() in the downstream audio-kernel. From the Xiaomi 12
+Pro (zeus) port; ported to 7.3 (scope-based kfree of the request packet).
+
+diff --git a/sound/soc/qcom/qdsp6/q6apm.c b/sound/soc/qcom/qdsp6/q6apm.c
+index a79bbb34c..24b4b67a6 100644
+--- a/sound/soc/qcom/qdsp6/q6apm.c
++++ b/sound/soc/qcom/qdsp6/q6apm.c
+@@ -140,14 +140,38 @@ static void q6apm_put_audioreach_graph(struct kref *ref)
+ }
+ 
+ 
++/*
++ * The signal processing framework is not up as soon as the ADSP is, and asking
++ * once loses the race: the command simply goes unanswered, the state stays 0,
++ * and every graph operation afterwards fails - which presents as a sound card
++ * that registers and then returns -EIO on any playback.
++ *
++ * Qualcomm's own driver polls rather than asking once. spf_core_is_apm_ready()
++ * in the downstream audio-kernel re-sends APM_CMD_GET_SPF_STATE in a loop,
++ * sleeping 50ms between attempts, for up to APM_STATE_READY_TIMEOUT_MS. Do the
++ * same here; a ready ADSP still answers on the first attempt, so this costs
++ * nothing when the race is won.
++ */
++#define APM_STATE_READY_TIMEOUT_MS	10000
++#define APM_STATE_POLL_INTERVAL_US	50000
++
+ static int q6apm_get_apm_state(struct q6apm *apm)
+ {
+-	struct gpr_pkt *pkt __free(kfree) = audioreach_alloc_apm_cmd_pkt(0,
+-								APM_CMD_GET_SPF_STATE, 0);
+-	if (IS_ERR(pkt))
+-		return PTR_ERR(pkt);
++	unsigned long timeout = jiffies + msecs_to_jiffies(APM_STATE_READY_TIMEOUT_MS);
++
++	do {
++		struct gpr_pkt *pkt __free(kfree) = audioreach_alloc_apm_cmd_pkt(0,
++									APM_CMD_GET_SPF_STATE, 0);
++		if (IS_ERR(pkt))
++			return PTR_ERR(pkt);
++
++		q6apm_send_cmd_sync(apm, pkt, APM_CMD_RSP_GET_SPF_STATE);
++		if (apm->state)
++			break;
+ 
+-	q6apm_send_cmd_sync(apm, pkt, APM_CMD_RSP_GET_SPF_STATE);
++		usleep_range(APM_STATE_POLL_INTERVAL_US,
++			     APM_STATE_POLL_INTERVAL_US + 50);
++	} while (time_before(jiffies, timeout));
+ 
+ 	return apm->state;
+ }

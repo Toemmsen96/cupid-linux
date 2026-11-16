@@ -8,7 +8,8 @@
 #   CUPID_PMB_WORK   pmbootstrap work dir (chroots, package cache, ccache)
 #   CUPID_PMAPORTS   pmaports checkout that carries the cupid branch
 #   CUPID_UI         postmarketOS UI (phosh, gnome-mobile, console, ...)
-#   CUPID_KERNEL     kernel variant: stable (6.13, recommended) or next (6.17)
+#   CUPID_KERNEL     kernel variant: stable (6.13), next (6.17, fork) or
+#                    mainline (7.3 from kernel.org)
 #   CUPID_PASSWORD   password for the user account in the image
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,7 +21,7 @@ BRANCH="cupid"
 PMAPORTS_URL="https://gitlab.postmarketos.org/postmarketOS/pmaports.git"
 
 # The package directories this repository carries on top of pmaports.
-PACKAGES="device-xiaomi-cupid firmware-xiaomi-cupid linux-postmarketos-qcom-sm8450-cupid linux-postmarketos-qcom-sm8450-cupid-next"
+PACKAGES="device-xiaomi-cupid firmware-xiaomi-cupid linux-postmarketos-qcom-sm8450-cupid linux-postmarketos-qcom-sm8450-cupid-next linux-postmarketos-qcom-sm8450-cupid-mainline"
 
 pmb() {
 	pmbootstrap -c "$CFG" "$@"

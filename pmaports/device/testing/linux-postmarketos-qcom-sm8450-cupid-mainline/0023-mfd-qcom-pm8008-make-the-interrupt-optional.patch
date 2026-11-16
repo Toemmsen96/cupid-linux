@@ -1,0 +1,53 @@
+mfd: qcom-pm8008: make the interrupt optional
+
+The Xiaomi 12's camera PMIC (second PM8008, I2C 0x0c on QUP SE5) has no
+interrupt line in the vendor devicetree; probe failed on the IRQ chip and
+none of the camera rails appeared. Without an interrupt, skip the IRQ
+chip and register the cells with no IRQ domain: the regulators work, the
+GPIO and temperature-alarm cells fail to probe on their own.
+
+diff --git a/drivers/mfd/qcom-pm8008.c b/drivers/mfd/qcom-pm8008.c
+index 60204cc9a..4702ae89c 100644
+--- a/drivers/mfd/qcom-pm8008.c
++++ b/drivers/mfd/qcom-pm8008.c
+@@ -193,6 +193,7 @@ static void devm_irq_domain_fwnode_release(void *data)
+ static int pm8008_probe(struct i2c_client *client)
+ {
+ 	struct regmap_irq_chip_data *irq_data;
++	struct irq_domain *domain = NULL;
+ 	struct device *dev = &client->dev;
+ 	struct regmap *regmap, *regmap2;
+ 	struct fwnode_handle *fwnode;
+@@ -231,6 +232,14 @@ static int pm8008_probe(struct i2c_client *client)
+ 	 */
+ 	usleep_range(1000, 2000);
+ 
++	/*
++	 * Boards may leave the interrupt line unconnected (the Xiaomi 12's
++	 * camera PMIC has none in the vendor devicetree). The regulators work
++	 * without it; only the GPIO and temperature-alarm interrupts are lost.
++	 */
++	if (client->irq <= 0)
++		goto add_devices;
++
+ 	name = devm_kasprintf(dev, GFP_KERNEL, "%pOF-internal", dev->of_node);
+ 	if (!name)
+ 		return -ENOMEM;
+@@ -252,12 +261,14 @@ static int pm8008_probe(struct i2c_client *client)
+ 		return ret;
+ 	}
+ 
++	domain = regmap_irq_get_domain(irq_data);
++
++add_devices:
+ 	/* Needed by GPIO driver. */
+-	dev_set_drvdata(dev, regmap_irq_get_domain(irq_data));
++	dev_set_drvdata(dev, domain);
+ 
+ 	return devm_mfd_add_devices(dev, PLATFORM_DEVID_AUTO, pm8008_cells,
+-				ARRAY_SIZE(pm8008_cells), NULL, 0,
+-				regmap_irq_get_domain(irq_data));
++				ARRAY_SIZE(pm8008_cells), NULL, 0, domain);
+ }
+ 
+ static const struct of_device_id pm8008_match[] = {

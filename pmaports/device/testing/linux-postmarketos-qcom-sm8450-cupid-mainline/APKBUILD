@@ -1,0 +1,137 @@
+# Maintainer: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+# Mainline kernel for the Xiaomi 12 (cupid): Linux 7.3 stable from kernel.org.
+#
+# The sm8450-mainline fork (stable/next packages) is not needed any more for
+# most of the SoC: 7.3 has the DPU quad-pipe work, the DSI byte clock rounding,
+# the IPA v5.x GSI fixes and the CSID/VFE 680 blocks CAMSS builds on. What
+# only the fork had is carried here as patches (fork-*): the generated panel
+# driver for l3-42-02-0a, the ST FTS SPI touch driver from downstream, and
+# two small sm8450.dtsi changes. The cupid devicetree is the next package's,
+# adapted to mainline's sm8450.dtsi (flattened USB node, three reserved
+# regions mainline no longer has).
+#
+# Our patches keep the numbers of the 6.13/6.17 packages. Dropped because 7.3
+# has them or no longer needs them: 0009 (libbpf const, fixed upstream), 0015
+# (DSI rounding), 0016 (GSI fixes). 0004 (PCIe link-training retry) is left
+# out on purpose: the qcom PCIe driver and pwrctrl were reworked upstream;
+# re-port it only if WiFi does not come up.
+#
+# Not booted yet. Keep stable/next as fallbacks: pmbootstrap config kernel next
+_flavor="postmarketos-qcom-sm8450-cupid-mainline"
+pkgname=linux-$_flavor
+pkgver=7.3.4
+pkgrel=0
+pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
+arch="aarch64"
+_carch="arm64"
+url="https://kernel.org"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps
+	pmb:cross-native
+	pmb:kconfigcheck-nftables
+	"
+makedepends="
+	bison
+	elfutils-dev
+	findutils
+	flex
+	installkernel
+	linux-headers
+	openssl-dev
+	pahole
+	perl
+	python3
+	"
+
+_config="config-$_flavor.$arch"
+source="
+	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-$pkgver.tar.xz
+	$_config
+	sm8450-xiaomi-cupid.dts
+	fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
+	fork-0002-input-touchscreen-add-fts_spi-driver.patch
+	fork-0003-arm64-dts-qcom-sm8450-add-clock-names-to-mdss.patch
+	fork-0004-arm64-dts-qcom-sm8450-add-low-svs-l2-opp.patch
+	0002-fts-single-full-duplex-transfer-for-geni.patch
+	0003-fts-palm-rejection-and-panel-follower.patch
+	0026-fts-look-up-gpios-without-of_get_named_gpio.patch
+	0005-ath11k-reset-the-firmware-when-wmi-stops-answering.patch
+	0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
+	0007-pdr-ack-service-up-before-notifying-clients.patch
+	0008-apr-install-the-gpr-callback-before-probing.patch
+	0010-battmgr-stop-requesting-properties-the-firmware-never-answers.patch
+	0011-panel-l3-42-02-0a-brightness-refresh-rate-and-timing-tails.patch
+	0012-ipa-add-ipa-v5.1-for-sm8450.patch
+	0013-arm64-dts-sm8450-add-ipa-node.patch
+	0019-input-add-awinic-aw8697-haptics-driver.patch
+	0020-battmgr-translate-xiaomi-battery-property-ids.patch
+	0021-media-qcom-camss-add-sm8450-support.patch
+	0022-clk-qcom-camcc-sm8450-park-rcgs-on-xo.patch
+	0023-mfd-qcom-pm8008-make-the-interrupt-optional.patch
+	0024-media-i2c-ov13b10-devicetree-match.patch
+	0025-drm-msm-dpu-one-dsc-encoder-for-single-slice-panels.patch
+"
+builddir="$srcdir/linux-$pkgver"
+
+prepare() {
+	default_prepare
+
+	# The devicetree is maintained outside the tree; mainline has no cupid
+	# entry in the Makefile, so dtbs_install would skip it.
+	cp "$srcdir"/sm8450-xiaomi-cupid.dts \
+		arch/arm64/boot/dts/qcom/sm8450-xiaomi-cupid.dts
+	grep -q 'sm8450-xiaomi-cupid.dtb' arch/arm64/boot/dts/qcom/Makefile ||
+		echo 'dtb-$(CONFIG_ARCH_QCOM)	+= sm8450-xiaomi-cupid.dtb' \
+			>> arch/arm64/boot/dts/qcom/Makefile
+
+	cp "$srcdir/$_config" .config
+	make ARCH="$_carch" CC="${CC:-gcc}" olddefconfig
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" CC="${CC:-gcc}" \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-$_flavor"
+}
+
+package() {
+	mkdir -p "$pkgdir"/boot
+	make zinstall modules_install dtbs_install \
+		ARCH="$_carch" \
+		INSTALL_PATH="$pkgdir"/boot/ \
+		INSTALL_MOD_PATH="$pkgdir"/usr \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
+	rm -f "$pkgdir"/usr/lib/modules/*/build "$pkgdir"/usr/lib/modules/*/source
+
+	install -D "$builddir"/include/config/kernel.release \
+		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+}
+
+sha512sums="
+db5508c3cf8b613b4680022eb785c036bcf8a5c952f8d0b2f3c2c7dc16779cf8bd954e0bca0b0b52451bac61430a687ae73205574f002f3b60de886640ebb9b0  linux-7.3.4.tar.xz
+b505b328f7f0ef9530a908eb8b6ed76496757b456dfdb12e0342d64a45eacf2a3f17f2289c95b38d001b4bf760ac4ab69ad2d49aaa197778dfdac542fa1a8b88  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
+e59b3af51777b6d9c2e2c8dabe65a8266e7da69a3103697869cc7e14d7965b04c4f8b64cdffef4da9d47eaab5475b540849e5f5c0c3962686ac7587f245dd98b  sm8450-xiaomi-cupid.dts
+f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd5d905d95de266a54eeb5ab88bd2924cd7e5878dbd4224096  fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
+05f0f5ffa8e5b42052f0ba05a99a463f857ba5c1283b45761cb2917ab6e7fd6d38a4ba7bc40578d7816bb020e2ff27083577c9fd89b454d1854bb32349beba8f  fork-0002-input-touchscreen-add-fts_spi-driver.patch
+258b8914f95d863dd6a58f73e153c0c805edc103e324c55439fd1d4c930fccc1e434c5a32a9ba50c06f44b2f5cbe1c5b7600744804efb8b1be2eb8e0f79f7e10  fork-0003-arm64-dts-qcom-sm8450-add-clock-names-to-mdss.patch
+2df6b71d8c3f7f82bf628cfec206f4a09ef3d648feb5193e3cf17c803c35604efbfa09c8730194ad8386328b530f405c67d33c30b6b6940fc2bd6ca73e05df42  fork-0004-arm64-dts-qcom-sm8450-add-low-svs-l2-opp.patch
+e6caa5447ed2ecae65f3b9a7af9d17e8367a04b018c9d9324add28690d3693729ffeceb3e78c38412cf36e93c4cb20d257969f3b3ac5bb89b262d746503f1d7a  0002-fts-single-full-duplex-transfer-for-geni.patch
+6d20f8cf621cb38bfc00bdd041d5baa191320b8ab8dfa82ec0a3e9a7749d373f903f4ec1a91da72aa7cbb83407c0cc8aa2648590ea3a067df16699e3a4a53033  0003-fts-palm-rejection-and-panel-follower.patch
+b0670d5e10cb2933ecbdf1c9c0efe825c8553fbc1230fd1adf1d377dc3213b20326e0066948bc30d689652561a4a01f1671adef02ed669c85d869ad1da6b4b13  0026-fts-look-up-gpios-without-of_get_named_gpio.patch
+64157727f53b104693af1cd7bbcefa15b1db8866e6c9133e0c54da990097fcdeae614d2652539cbb9bce9591a24855c945491bf58a1f8f9ec9c214718ceee901  0005-ath11k-reset-the-firmware-when-wmi-stops-answering.patch
+bd18c3ca122c494e6414f0f1304f237db7cd9e1ccca7e336e3ec7f51e58f93dc1e04c3e0048fe4a47fd8c978d4e20b8e981ad99b9b8594c715b8f941d3e6cc5c  0006-q6apm-poll-for-spf-readiness-like-the-downstream-driver.patch
+c37614a0c561893f929594558aadd590d12ffaeaa6b8d9afef7a546a36a30c08b0bd94a19e5fa4208b2b1f24ed95a62d66374f62a49af014b69e82ba4ce27cf8  0007-pdr-ack-service-up-before-notifying-clients.patch
+bd27da92de7f0e161134a0c0a18cf57d9e6a74ed8c599006b79e864d405c02b8da62bb02aea6a10c79838f6132d09580f2c2a5e89e5de4dbf6303c1abd655744  0008-apr-install-the-gpr-callback-before-probing.patch
+1c8d59beb620ba71ec48fea0d6447d6076f88d575c747a1cbb3389ca6d4427727ceb7e4b4bf466f58873e7cd8122f51f88c930a3a8e91bd3effb306ef3092053  0010-battmgr-stop-requesting-properties-the-firmware-never-answers.patch
+c60dcd9c00e2bffab1289f5a6d5b98be5ed2399019c742627169fba7d824231974f97cf238c533ae4db461001f4eead77f0af47c23136100fb73d522b144b08d  0011-panel-l3-42-02-0a-brightness-refresh-rate-and-timing-tails.patch
+cf8b50312687710253114bd84b014cbeff74d03e245dea71885cc69300c439d73c23a9e320d8fdcd6f3d549bfcb58b644ac62b9c805c2238ef9f6ee4fde8b677  0012-ipa-add-ipa-v5.1-for-sm8450.patch
+279c35cf90ce7a2323223c1750a8a8f25648361db6832e21ab9757f05a789f07122cb9f9db0fe07a5efa3fb99a060001a59e4ad4241a5b6e28dd97becc09e178  0013-arm64-dts-sm8450-add-ipa-node.patch
+4400b763596127692bcf2020c63539f9812fbf058f859213b605eaa5975bc19fa8884e949b0febb401b173fcb7a050a7fa275ebaa448534ef9a048907da036cd  0019-input-add-awinic-aw8697-haptics-driver.patch
+64482d2b9aebce6c0987047b4345e03742537feafb47a6c969cc96ce58c3a9ca1b866cd90a8bca9104ddc6c23704b35d90f121e2173327e1be0c75773b481d1c  0020-battmgr-translate-xiaomi-battery-property-ids.patch
+b372340c8088c057d77e27983d72c6409ab1f1c9de47e5d3bbb997eb7b3916bda97f9b269f6fc715e8de76585e4ccbda3c36ff6150cf9c6873386e6403d4e957  0021-media-qcom-camss-add-sm8450-support.patch
+20c271df0a5e9fae6d4f81d640ef7643cad7815356a69d54f9b72c4947cd74d717716e97881e6005091b7ec4aae06e10d9dbc95b9f9596d0d200647e4c63e426  0022-clk-qcom-camcc-sm8450-park-rcgs-on-xo.patch
+85e3ac9a5f696d60e8156fece7802b1e6cd45d2119ec1ddd26c69a6eeebcbbb8cb54213cb41427610240ae14e5c2261436dfd180375e7d1185e3480e63a679e6  0023-mfd-qcom-pm8008-make-the-interrupt-optional.patch
+061d4b241c24139b1e76cb0e630f19ba43ecb6b4b02be62a91c80cf881f76e4ebba35b7112a106741525e5668f8902eaf436dc8867494b8c69147a5092c28d56  0024-media-i2c-ov13b10-devicetree-match.patch
+b22a7c5eb9c2d61cc9ffeb73fa42998b222860d729252552bd14d5fec8ccabb6dbc8c62a5fe7c47410674178b5bb4c1c00584e3eb199d7cccfe0e1ceb1c4ceb5  0025-drm-msm-dpu-one-dsc-encoder-for-single-slice-panels.patch
+"

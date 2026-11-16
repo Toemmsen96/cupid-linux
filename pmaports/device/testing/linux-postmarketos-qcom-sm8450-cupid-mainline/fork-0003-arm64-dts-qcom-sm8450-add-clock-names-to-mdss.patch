@@ -1,0 +1,25 @@
+From 717feee65cab179c42de218f40f2f474f16e4ff2 Mon Sep 17 00:00:00 2001
+From: Jens Reidel <adrian@travitia.xyz>
+Date: Fri, 10 Nov 2023 22:03:37 +0100
+Subject: [PATCH] arm64: dts: qcom: sm8450: Add clock-names to mdss
+
+Signed-off-by: Jens Reidel <adrian@travitia.xyz>
+---
+ arch/arm64/boot/dts/qcom/sm8450.dtsi | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm8450.dtsi b/arch/arm64/boot/dts/qcom/sm8450.dtsi
+index 33574ad706b915..28cd42d3e9fd01 100644
+--- a/arch/arm64/boot/dts/qcom/sm8450.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm8450.dtsi
+@@ -3321,6 +3321,10 @@
+ 				 <&gcc GCC_DISP_HF_AXI_CLK>,
+ 				 <&gcc GCC_DISP_SF_AXI_CLK>,
+ 				 <&dispcc DISP_CC_MDSS_MDP_CLK>;
++			clock-names = "iface_clk",
++			          "gcc_bus",
++			          "gcc_nrt_bus",
++			          "branch_clk";
+ 
+ 			interrupts = <GIC_SPI 83 IRQ_TYPE_LEVEL_HIGH>;
+ 			interrupt-controller;

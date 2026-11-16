@@ -1,0 +1,31 @@
+drm/msm/dpu: one DSC encoder for single-slice panels
+
+With DSC the encoder takes two DSC encoders (and two mixers) whenever the
+SoC has two, merged on one interface. That splits each line between the
+encoders and needs at least two slices per line. The Xiaomi 12 panel
+(l3-42-02-0a) has one 1080-wide slice, stock uses topology 1:1:1: with two
+encoders the DSI got a different byte count per line, the command-mode
+transfer never finished (pp_done timeouts, DCS commands then -110) and the
+panel showed the first lines followed by garbage (seen on 6.17). Use two
+encoders on one interface only for configs with at least two slices.
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+index 1f20695f8..567147568 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -686,7 +686,14 @@ void dpu_encoder_update_topology(struct drm_encoder *drm_enc,
+ 		 */
+ 		WARN(topology->num_intf > 2,
+ 		     "DSC topology cannot support more than 2 interfaces\n");
+-		if (topology->num_intf >= 2 || dpu_kms->catalog->dsc_count >= 2)
++		/*
++		 * Two DSC encoders on one interface are merged and split each
++		 * line between them, which needs at least two slices per line.
++		 * A single-slice panel (Xiaomi 12: one 1080-wide slice, stock
++		 * topology 1:1:1) gets garbage and every frame times out.
++		 */
++		if (topology->num_intf >= 2 ||
++		    (dpu_kms->catalog->dsc_count >= 2 && dsc->slice_count >= 2))
+ 			topology->num_dsc = 2;
+ 		else
+ 			topology->num_dsc = 1;

@@ -88,7 +88,8 @@ pmaports/device/testing/
   device-xiaomi-cupid/                    deviceinfo, UCM, phosh, modules, NM config
   firmware-xiaomi-cupid/                  remoteproc/GPU/IPA blobs + touch firmware
   linux-postmarketos-qcom-sm8450-cupid/   6.13-rc3 kernel: config, devicetree, patches
-  linux-postmarketos-qcom-sm8450-cupid-next/  6.17-rc1 kernel (experimental)
+  linux-postmarketos-qcom-sm8450-cupid-next/  6.17-rc1 kernel (display, ultra-wide camera)
+  linux-postmarketos-qcom-sm8450-cupid-mainline/  Linux 7.3 from kernel.org + cupid patches
 scripts/      setup, sync, build, flash, stock dump, sdcard backup, devicetree check, pmb wrapper
 docs/         prerequisites, build, install, troubleshooting, hardware status, Arch, firmware
 arch/         Arch Linux ARM rootfs builder and kernel PKGBUILD (phase 2)
@@ -100,10 +101,18 @@ Build output lands in `out/` (symlinks into the pmbootstrap work directory):
 ## Choosing the kernel and UI
 
 ```sh
-scripts/pmb config kernel next     # or: stable (default, 6.13-rc3)
+scripts/pmb config kernel next     # or: stable (default, 6.13-rc3), mainline (7.3)
 scripts/pmb config ui console      # black screen + SSH is the safest first boot
 scripts/build.sh image             # re-install without rebuilding packages
 ```
+
+Three kernel packages: `stable` (sm8450-mainline fork, 6.13-rc3, the most
+tested), `next` (the fork's 6.17-rc1 branch: display, touch, WiFi and the
+ultra-wide camera verified) and `mainline` (Linux 7.3 stable from
+kernel.org with the fork-only drivers and our fixes as patches; not booted
+yet). `CUPID_KERNEL=mainline scripts/build.sh kernel` builds only the
+kernel package; on a running phone it can be installed with
+`apk add` over SSH, its hook rewrites the boot partition.
 
 `scripts/pmb` is pmbootstrap with this repository's config; any pmbootstrap
 command works through it (`scripts/pmb log`, `scripts/pmb chroot`, ...).

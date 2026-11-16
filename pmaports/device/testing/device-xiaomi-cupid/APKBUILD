@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=4
+pkgrel=5
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -39,6 +39,7 @@ makedepends="devicepkg-dev"
 subpackages="
 	$pkgname-kernel-stable:kernel_stable
 	$pkgname-kernel-next:kernel_next
+	$pkgname-kernel-mainline:kernel_mainline
 	$pkgname-phosh
 	$pkgname-openrc
 	$pkgname-systemd
@@ -114,8 +115,14 @@ kernel_stable() {
 }
 
 kernel_next() {
-	pkgdesc="sm8450-mainline next branch, 6.17-rc1 (experimental, untested on hardware)"
+	pkgdesc="sm8450-mainline next branch, 6.17-rc1 (experimental: display, ultra-wide camera)"
 	depends="linux-postmarketos-qcom-sm8450-cupid-next"
+	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
+}
+
+kernel_mainline() {
+	pkgdesc="Linux 7.3 stable from kernel.org with the cupid patches (experimental)"
+	depends="linux-postmarketos-qcom-sm8450-cupid-mainline"
 	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
 }
 

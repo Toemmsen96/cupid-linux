@@ -26,6 +26,7 @@ need pmbootstrap avbtool
 kernel_variant="$(pmb config kernel)"
 case "$kernel_variant" in
 	next) kernel_pkg="linux-postmarketos-qcom-sm8450-cupid-next" ;;
+	mainline) kernel_pkg="linux-postmarketos-qcom-sm8450-cupid-mainline" ;;
 	*) kernel_pkg="linux-postmarketos-qcom-sm8450-cupid" ;;
 esac
 echo "==> kernel variant: $kernel_variant ($kernel_pkg), ui: $(pmb config ui)"
@@ -51,13 +52,13 @@ case "$1" in
 		;;
 esac
 
-# Switching kernels (stable <-> next) in an existing rootfs chroot fails: both
+# Switching kernels (stable, next, mainline) in an existing rootfs chroot fails: both
 # packages own /boot/vmlinuz and the dtbs, so apk refuses to add the new one
 # and leaves a half-installed rootfs. Start the chroots fresh in that case
 # (zap keeps the built packages).
 rootfs_db="$WORK/chroot_rootfs_xiaomi-cupid/lib/apk/db/installed"
 if [ -r "$rootfs_db" ] &&
-	grep -E '^P:linux-postmarketos-qcom-sm8450-cupid(-next)?$' "$rootfs_db" |
+	grep -E '^P:linux-postmarketos-qcom-sm8450-cupid(-next|-mainline)?$' "$rootfs_db" |
 	grep -qvx "P:$kernel_pkg"; then
 	echo "==> rootfs has another kernel installed, zapping the chroots first"
 	pmb -y zap

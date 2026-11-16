@@ -1,0 +1,89 @@
+input: fts_spi: look up the GPIOs without of_get_named_gpio()
+
+<linux/of_gpio.h> and of_get_named_gpio() are gone in 7.x. The downstream
+driver still works with legacy GPIO numbers (GPIOLIB_LEGACY), so look the
+lines up through gpiolib (fwnode_gpiod_get_index(), which also accepts the
+"fts,...-gpio" property names) and pass the number on.
+
+diff --git a/drivers/input/touchscreen/fts_spi/fts.c b/drivers/input/touchscreen/fts_spi/fts.c
+index be69fdb57..ed1ccc7fe 100644
+--- a/drivers/input/touchscreen/fts_spi/fts.c
++++ b/drivers/input/touchscreen/fts_spi/fts.c
+@@ -49,7 +49,7 @@
+ #endif
+ 
+ #include <linux/gpio.h>
+-#include <linux/of_gpio.h>
++#include <linux/gpio/consumer.h>
+ #include <linux/pinctrl/consumer.h>
+ #include <linux/regulator/consumer.h>
+ 
+@@ -4070,6 +4070,28 @@ static int fts_pinctrl_init(struct fts_ts_info *info)
+  * the most important information to obtain are: IRQ and RESET gpio numbers, power regulator names
+  * In the device file node is possible to define additional optional information that can be parsed here.
+  */
++/*
++ * of_get_named_gpio() is gone since 6.x/7.x; the rest of this downstream
++ * driver still uses the legacy GPIO numbers. Look the line up through
++ * gpiolib (which also accepts the "fts,...-gpio" property names) and hand
++ * back the number; the driver requests the GPIOs itself later.
++ */
++static int fts_of_get_gpio(struct device_node *np, const char *con_id)
++{
++	struct gpio_desc *desc;
++	int gpio;
++
++	desc = fwnode_gpiod_get_index(of_fwnode_handle(np), con_id, 0,
++				      GPIOD_ASIS, "fts");
++	if (IS_ERR(desc))
++		return PTR_ERR(desc);
++
++	gpio = desc_to_gpio(desc);
++	gpiod_put(desc);
++
++	return gpio;
++}
++
+ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
+ {
+ 	int retval;
+@@ -4078,7 +4100,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
+ 	struct fts_config_info *config_info;
+ 	u32 temp_val;
+ 
+-	bdata->irq_gpio = of_get_named_gpio(np, "fts,irq-gpio", 0);
++	bdata->irq_gpio = fts_of_get_gpio(np, "fts,irq");
+ 
+ 	logError(0, "%s irq_gpio = %d\n", tag, bdata->irq_gpio);
+ 	retval = of_property_read_string(np, "fts,pwr-reg-name", &name);
+@@ -4101,7 +4123,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
+ 		logError(0, "%s bus_reg_name = %s\n", tag, name);
+ 	}
+ 
+-	retval = of_get_named_gpio(np, "fts,avdd-gpio", 0);
++	retval = fts_of_get_gpio(np, "fts,avdd");
+ 	if (retval < 0) {
+ 		logError(0,"%s can't find avdd-gpio[%d]\n", tag, retval);
+ 		bdata->avdd_gpio = 0;
+@@ -4112,7 +4134,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
+ 
+ 	if (of_property_read_bool(np, "fts,reset-gpio-enable")) {
+ 		bdata->reset_gpio =
+-			of_get_named_gpio(np, "fts,reset-gpio", 0);
++			fts_of_get_gpio(np, "fts,reset");
+ 		logError(0, "%s reset_gpio =%d\n", tag, bdata->reset_gpio);
+ 	} else {
+ 		bdata->reset_gpio = GPIO_NOT_DEFINED;
+diff --git a/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c b/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c
+index 4fe578e61..f716f34a8 100644
+--- a/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c
++++ b/drivers/input/touchscreen/fts_spi/fts_lib/ftsIO.c
+@@ -28,7 +28,7 @@
+ #include <linux/stdarg.h>
+ #include <linux/delay.h>
+ #include <linux/ctype.h>
+-#include <linux/of_gpio.h>
++#include <linux/gpio/consumer.h>
+ 
+ #ifdef I2C_INTERFACE
+ #include <linux/i2c.h>
