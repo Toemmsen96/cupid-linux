@@ -18,8 +18,12 @@ board fields:
   I2S one;
 - the bit clock as component and DAI sysclk of the TDM codecs, for the
   CS35L41 PLL, which runs from SCLK;
-- the "tdm-vote" clock and the optional "tdm-dcodec-vote" and "tdm-bclk"
-  clocks, held from backend startup to shutdown.
+- the "tdm-vote" (LPASS MACRO) and optional "tdm-dcodec-vote" clocks,
+  held from backend startup to shutdown for every backend, and the
+  optional "tdm-bclk" clock for TDM backends. On 7.3 the DSP also refuses
+  to open the headphone codec DMA graph ("DSP returned error[1001000]")
+  unless these votes are held, which the runtime PM LPASS macros do not
+  guarantee at prepare() time.
 
 The clock handling follows dianqk's Xiaomi Poco F5 (marble) speaker card
 in github.com/dianqk/nixos-android-devices (0054, 0064), which needs the
@@ -29,11 +33,11 @@ run before the DSP graph opens.
 
 Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
 ---
- sound/soc/qcom/sc8280xp.c | 195 +++++++++++++++++++++++++++++++++++++-
- 1 file changed, 190 insertions(+), 5 deletions(-)
+ sound/soc/qcom/sc8280xp.c | 209 ++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 204 insertions(+), 5 deletions(-)
 
 diff --git a/sound/soc/qcom/sc8280xp.c b/sound/soc/qcom/sc8280xp.c
-index 4d48e1012..1bf597bf8 100644
+index 4d48e1012..ef565acbb 100644
 --- a/sound/soc/qcom/sc8280xp.c
 +++ b/sound/soc/qcom/sc8280xp.c
 @@ -2,6 +2,7 @@
@@ -44,7 +48,7 @@ index 4d48e1012..1bf597bf8 100644
  #include <linux/module.h>
  #include <linux/platform_device.h>
  #include <sound/soc.h>
-@@ -71,6 +72,23 @@ struct qcom_snd_soc_common {
+@@ -71,6 +72,24 @@ struct qcom_snd_soc_common {
  	bool mi2s_mclk_enable;
  	bool mi2s_bclk_enable;
  	bool wcd_jack;
@@ -60,15 +64,16 @@ index 4d48e1012..1bf597bf8 100644
 +	 */
 +	bool tdm_codec_sclk;
 +	/*
-+	 * TDM backends that need the LPASS core held: "tdm-vote" clock, and
-+	 * the optional "tdm-dcodec-vote" and "tdm-bclk" clocks, from backend
-+	 * startup to shutdown.
++	 * Boards whose backends need the LPASS core held: the "tdm-vote"
++	 * (MACRO) clock and the optional "tdm-dcodec-vote" clock for every
++	 * backend session, the optional "tdm-bclk" clock for TDM ones, from
++	 * backend startup to shutdown.
 +	 */
 +	bool tdm_hw_vote;
  	int (*snd_prepare)(struct snd_pcm_substream *substream);
  };
  
-@@ -80,6 +98,9 @@ struct sc8280xp_snd_data {
+@@ -80,6 +99,9 @@ struct sc8280xp_snd_data {
  	struct snd_soc_jack jack;
  	struct snd_soc_jack dp_jack[8];
  	const struct qcom_snd_soc_common *priv;
@@ -78,7 +83,7 @@ index 4d48e1012..1bf597bf8 100644
  	bool jack_setup;
  };
  
-@@ -130,10 +151,12 @@ static int sc8280xp_tdm_hw_params(struct snd_pcm_substream *substream,
+@@ -130,10 +152,12 @@ static int sc8280xp_tdm_hw_params(struct snd_pcm_substream *substream,
  	if (ret && ret != -ENOTSUPP)
  		return ret;
  
@@ -94,7 +99,7 @@ index 4d48e1012..1bf597bf8 100644
  			if (ret && ret != -ENOTSUPP)
  				return ret;
  		}
-@@ -169,6 +192,21 @@ static int sc8280xp_tdm_hw_params(struct snd_pcm_substream *substream,
+@@ -169,6 +193,21 @@ static int sc8280xp_tdm_hw_params(struct snd_pcm_substream *substream,
  		}
  	}
  
@@ -116,7 +121,7 @@ index 4d48e1012..1bf597bf8 100644
  	return 0;
  }
  
-@@ -218,6 +256,7 @@ static int sc8280xp_snd_init(struct snd_soc_pcm_runtime *rtd)
+@@ -218,6 +257,7 @@ static int sc8280xp_snd_init(struct snd_soc_pcm_runtime *rtd)
  static int sc8280xp_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
  				     struct snd_pcm_hw_params *params)
  {
@@ -124,7 +129,7 @@ index 4d48e1012..1bf597bf8 100644
  	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
  	struct snd_interval *rate = hw_param_interval(params,
  					SNDRV_PCM_HW_PARAM_RATE);
-@@ -236,6 +275,16 @@ static int sc8280xp_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+@@ -236,6 +276,16 @@ static int sc8280xp_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
  	case TX_CODEC_DMA_TX_3:
  		channels->min = 1;
  		break;
@@ -141,7 +146,7 @@ index 4d48e1012..1bf597bf8 100644
  	default:
  		break;
  	}
-@@ -368,9 +417,98 @@ static int sc8280xp_snd_hw_free(struct snd_pcm_substream *substream)
+@@ -368,9 +418,110 @@ static int sc8280xp_snd_hw_free(struct snd_pcm_substream *substream)
  	return qcom_snd_sdw_hw_free(substream, &data->stream_prepared[cpu_dai->id]);
  }
  
@@ -185,10 +190,17 @@ index 4d48e1012..1bf597bf8 100644
 +	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 +	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 +	struct sc8280xp_snd_data *data = snd_soc_card_get_drvdata(rtd->card);
-+	bool tdm = sc8280xp_is_tdm(cpu_dai) && data->tdm_vote;
++	bool votes = data->tdm_vote;
++	bool tdm = sc8280xp_is_tdm(cpu_dai) && votes;
 +	int ret;
 +
-+	if (tdm) {
++	/*
++	 * The DSP only opens a codec DMA or TDM graph while the LPASS MACRO
++	 * and DCODEC blocks are voted. Since the LPASS macros hold their
++	 * votes only while runtime active, the graph open in prepare() can
++	 * come before any macro resumes ("DSP returned error[1001000]").
++	 */
++	if (votes) {
 +		ret = clk_prepare_enable(data->tdm_vote);
 +		if (ret)
 +			return ret;
@@ -196,7 +208,9 @@ index 4d48e1012..1bf597bf8 100644
 +		ret = clk_prepare_enable(data->tdm_dcodec_vote);
 +		if (ret)
 +			goto err_vote;
++	}
 +
++	if (tdm) {
 +		ret = sc8280xp_tdm_bclk_enable(rtd);
 +		if (ret) {
 +			dev_err(rtd->dev, "failed to enable the TDM bit clock: %d\n", ret);
@@ -205,13 +219,14 @@ index 4d48e1012..1bf597bf8 100644
 +	}
 +
 +	ret = qcom_snd_sdw_startup(substream);
-+	if (ret && tdm)
++	if (ret && votes)
 +		goto err_bclk;
 +
 +	return ret;
 +
 +err_bclk:
-+	clk_disable_unprepare(data->tdm_bclk);
++	if (tdm)
++		clk_disable_unprepare(data->tdm_bclk);
 +err_dcodec:
 +	clk_disable_unprepare(data->tdm_dcodec_vote);
 +err_vote:
@@ -227,11 +242,13 @@ index 4d48e1012..1bf597bf8 100644
 +
 +	qcom_snd_sdw_shutdown(substream);
 +
-+	if (sc8280xp_is_tdm(cpu_dai) && data->tdm_vote) {
++	if (!data->tdm_vote)
++		return;
++
++	if (sc8280xp_is_tdm(cpu_dai))
 +		clk_disable_unprepare(data->tdm_bclk);
-+		clk_disable_unprepare(data->tdm_dcodec_vote);
-+		clk_disable_unprepare(data->tdm_vote);
-+	}
++	clk_disable_unprepare(data->tdm_dcodec_vote);
++	clk_disable_unprepare(data->tdm_vote);
 +}
 +
  static const struct snd_soc_ops sc8280xp_be_ops = {
@@ -242,7 +259,7 @@ index 4d48e1012..1bf597bf8 100644
  	.hw_params = sc8280xp_snd_hw_params,
  	.hw_free = sc8280xp_snd_hw_free,
  	.prepare = sc8280xp_snd_prepare,
-@@ -410,6 +548,23 @@ static int sc8280xp_platform_probe(struct platform_device *pdev)
+@@ -410,6 +561,23 @@ static int sc8280xp_platform_probe(struct platform_device *pdev)
  	if (!data->priv)
  		return -ENODEV;
  
@@ -266,7 +283,7 @@ index 4d48e1012..1bf597bf8 100644
  	card->owner = THIS_MODULE;
  	card->dev = dev;
  	dev_set_drvdata(dev, card);
-@@ -518,6 +673,35 @@ static const struct qcom_snd_soc_common sm8450_priv_data = {
+@@ -518,6 +686,36 @@ static const struct qcom_snd_soc_common sm8450_priv_data = {
  			 SND_SOC_DAIFMT_I2S,
  };
  
@@ -276,8 +293,9 @@ index 4d48e1012..1bf597bf8 100644
 + * slots (top amplifier slot 0, bottom slot 1), short frame sync with a
 + * one bit delay (DSP A), SoC clock provider. The amplifiers run their PLL
 + * from the bit clock. The interface needs the LPASS core votes of stock
-+ * "qcom,mi2s-tdm-is-hw-vote-needed". The SM8450 driver name keeps the
-+ * qcom/sm8450 topology and UCM directories.
++ * "qcom,mi2s-tdm-is-hw-vote-needed"; on this kernel the headphone codec DMA
++ * graph needs them too. The SM8450 driver name keeps the qcom/sm8450
++ * topology and UCM directories.
 + */
 +static const struct qcom_snd_soc_common xiaomi_cupid_priv_data = {
 +	.driver_name = "sm8450",
@@ -302,7 +320,7 @@ index 4d48e1012..1bf597bf8 100644
  static const struct qcom_snd_soc_common sm8475_priv_data = {
  	.driver_name = "sm8475",
  	.dapm_widgets = sc8280xp_dapm_widgets,
-@@ -576,6 +760,7 @@ static const struct of_device_id snd_sc8280xp_dt_match[] = {
+@@ -576,6 +774,7 @@ static const struct of_device_id snd_sc8280xp_dt_match[] = {
  	{ .compatible = "qcom,sm8550-sndcard", .data = &sm8550_priv_data },
  	{ .compatible = "qcom,sm8650-sndcard", .data = &sm8650_priv_data },
  	{ .compatible = "qcom,sm8750-sndcard", .data = &sm8750_priv_data },
