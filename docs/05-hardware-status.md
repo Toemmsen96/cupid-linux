@@ -20,7 +20,7 @@ fix that is in this repository but not yet booted.
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
 | Audio | broken | partial | card probes | headphone/codec-DMA path and USB-C audio; internal speakers (CS35L41 on tertiary TDM) do not work: the DSP never propagates a media format to the TDM sink, an audioreach gap |
-| Camera | broken | no | | no SM8450 CAMSS on mainline |
+| Camera | broken | no (6.13); stage 1 on 6.17 | pending | the 6.13 tree has no SM8450 CAMSS. The experimental 6.17 kernel (`next`) carries CAMSS for SM8450, the camera PMIC and the ultra-wide sensor, see [Cameras](#cameras); not booted yet |
 | Camera flash | works | works | | `pm8350c_flash` |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
 | WiFi | works | works, stabilised | works | patches 0004/0005, PMU supplies, ASPM off, power save off |
@@ -83,6 +83,40 @@ Left to try:
 - runtime experiments on INTF1 tear-check registers (base 0xae36000, only
   with the display on) to test start position / threshold changes without a
   rebuild.
+
+## Cameras
+
+From the stock devicetree (`qcom,cam-sensor0..3`) and the CamX sensor
+modules in the vendor partition (`com.qti.sensormodule.cupid_*.bin`):
+
+| Slot | Camera | Sensor | Bus | CSIPHY | MCLK (19.2 MHz) | Reset | Rails |
+|---|---|---|---|---|---|---|---|
+| sensor0 | rear main, OIS + AF + flash | Sony IMX766 (alt. modules IMX700/IMX707) | CCI0 bus 1 | 2 | MCLK2, gpio102 | gpio126 | DVDD gpio2, AVDD gpio70 (GPIO-switched), PM8008 L6/L7 for OIS/AF |
+| sensor1 | front | OmniVision OV32B40 | CCI0 bus 0 | 3 | MCLK5, gpio105 | gpio127 | DVDD gpio93, AVDD gpio68 |
+| sensor2 | rear ultra-wide | OmniVision OV13B10 | CCI0 bus 0 | 0 | MCLK1, gpio101 | gpio24 | PM8008 L2 (1.2 V) / L3 (2.8 V) |
+| sensor3 | rear telemacro, AF | Samsung S5K5E9 | CCI1 bus 0 | 1 | MCLK3, gpio103 | gpio128 | PM8008 L1, AVDD gpio71 |
+
+All four take I/O from PM8008 L5 (1.8 V). The PM8008 is the "j" instance
+at I2C 0x0c on QUP SE5, reset on gpio11, no interrupt line; a second PM8008
+("i", 0x08) feeds no camera. CSIPHY rails are pm8350 L5 (0.88 V) and L6
+(1.2 V).
+
+Mainline status: CAMSS for SM8450 is not upstream. The Galaxy Tab S8+ port
+([aaronsb/sm-x800-linux](https://github.com/aaronsb/sm-x800-linux), same
+SoC) streams raw Bayer from three sensors with a small CAMSS patch on top of
+the CSID/VFE 680 support that X1E80100 brought (6.17 has it, 6.13 does not)
+and a camcc fix without which every session after the first hangs the
+TITAN GDSC. Only the OV13B10 has a mainline driver (ACPI-only; patch 0024
+adds devicetree support). IMX766, OV32B40 and S5K5E9 have none; their
+register tables are in the CamX modules. The IFE/IPE processing pipeline has
+no mainline driver either, so the result is raw frames for libcamera's
+software ISP.
+
+Stage 1 in `linux-postmarketos-qcom-sm8450-cupid-next` (compile-tested,
+not booted): CAMSS (0021/0022), the PM8008 with optional interrupt (0023),
+CCI0 and the ultra-wide on CSIPHY0 at the OV13B10 default address 0x36. The
+I2C addresses of the other sensors are still to be found (`i2cdetect` on
+the CCI buses once CAMSS is up).
 
 ## Kernel patches carried
 

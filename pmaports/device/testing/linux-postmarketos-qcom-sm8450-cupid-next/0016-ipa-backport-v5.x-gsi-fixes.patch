@@ -1,0 +1,265 @@
+IPA v5.x GSI fixes from upstream, needed for SM8450 (IPA v5.1) data.
+
+Five upstream commits, unchanged, in order:
+  56007972c0b1 net: ipa: fix event ring index not programmed for IPA v5.0+
+  9709b56d908a net: ipa: fix GENERIC_CMD register field masks for IPA v5.0+
+  1335b903cf2e net: ipa: Fix decoding EV_PER_EE for IPA v5.0+
+  de08f9585692 net: ipa: Fix programming of QTIME_TIMESTAMP_CFG
+  3cbfd627ee72 net: ipa: fix stalled modem TX queue after runtime resume
+
+The first is the one that matters on cupid: the v5.0 CH_C_CNTXT_1 field table
+named the event ring field ERINDEX while gsi_channel_program() encodes
+CH_ERINDEX for v5.0+, so its mask was 0 and every channel was bound to event
+ring 0 (the command channel's). Modem TX completions were never polled, no
+downlink ever arrived (rx 0), and the first runtime suspend hung forever in
+gsi_channel_trans_quiesce().
+
+From 56007972c0b1e783ca714d6f1f4d6e66e531d21f Mon Sep 17 00:00:00 2001
+From: Alexander Koskovich <akoskovich@pm.me>
+Date: Fri, 3 Apr 2026 18:43:48 +0200
+Subject: [PATCH] net: ipa: fix event ring index not programmed for IPA v5.0+
+
+For IPA v5.0+, the event ring index field moved from CH_C_CNTXT_0 to
+CH_C_CNTXT_1. The v5.0 register definition intended to define this
+field in the CH_C_CNTXT_1 fmask array but used the old identifier of
+ERINDEX instead of CH_ERINDEX.
+
+Without a valid event ring, GSI channels could never signal transfer
+completions. This caused gsi_channel_trans_quiesce() to block
+forever in wait_for_completion().
+
+At least for IPA v5.2 this resolves an issue seen where runtime
+suspend, system suspend, and remoteproc stop all hanged forever. It
+also meant the IPA data path was completely non functional.
+
+Fixes: faf0678ec8a0 ("net: ipa: add IPA v5.0 GSI register definitions")
+Signed-off-by: Alexander Koskovich <akoskovich@pm.me>
+Signed-off-by: Luca Weiss <luca.weiss@fairphone.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20260403-milos-ipa-v1-2-01e9e4e03d3e@fairphone.com
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+---
+ drivers/net/ipa/reg/gsi_reg-v5.0.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ipa/reg/gsi_reg-v5.0.c b/drivers/net/ipa/reg/gsi_reg-v5.0.c
+index 3334d8e20ad28b..6c4a7fbe4de949 100644
+--- a/drivers/net/ipa/reg/gsi_reg-v5.0.c
++++ b/drivers/net/ipa/reg/gsi_reg-v5.0.c
+@@ -30,7 +30,7 @@ REG_STRIDE_FIELDS(CH_C_CNTXT_0, ch_c_cntxt_0,
+ 
+ static const u32 reg_ch_c_cntxt_1_fmask[] = {
+ 	[CH_R_LENGTH]					= GENMASK(23, 0),
+-	[ERINDEX]					= GENMASK(31, 24),
++	[CH_ERINDEX]					= GENMASK(31, 24),
+ };
+ 
+ REG_STRIDE_FIELDS(CH_C_CNTXT_1, ch_c_cntxt_1,
+
+From 9709b56d908acc120fe8b4ae250b3c9d749ea832 Mon Sep 17 00:00:00 2001
+From: Alexander Koskovich <akoskovich@pm.me>
+Date: Fri, 3 Apr 2026 18:43:47 +0200
+Subject: [PATCH] net: ipa: fix GENERIC_CMD register field masks for IPA v5.0+
+
+Fix the field masks to match the hardware layout documented in
+downstream GSI (GSI_V3_0_EE_n_GSI_EE_GENERIC_CMD_*).
+
+Notably this fixes a WARN I was seeing when I tried to send "stop"
+to the MPSS remoteproc while IPA was up.
+
+Fixes: faf0678ec8a0 ("net: ipa: add IPA v5.0 GSI register definitions")
+Signed-off-by: Alexander Koskovich <akoskovich@pm.me>
+Signed-off-by: Luca Weiss <luca.weiss@fairphone.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20260403-milos-ipa-v1-1-01e9e4e03d3e@fairphone.com
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+---
+ drivers/net/ipa/reg/gsi_reg-v5.0.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ipa/reg/gsi_reg-v5.0.c b/drivers/net/ipa/reg/gsi_reg-v5.0.c
+index 36d1e65df71bb1..3334d8e20ad28b 100644
+--- a/drivers/net/ipa/reg/gsi_reg-v5.0.c
++++ b/drivers/net/ipa/reg/gsi_reg-v5.0.c
+@@ -156,9 +156,10 @@ REG_FIELDS(EV_CH_CMD, ev_ch_cmd, 0x00025010 + 0x12000 * GSI_EE_AP);
+ 
+ static const u32 reg_generic_cmd_fmask[] = {
+ 	[GENERIC_OPCODE]				= GENMASK(4, 0),
+-	[GENERIC_CHID]					= GENMASK(9, 5),
+-	[GENERIC_EE]					= GENMASK(13, 10),
+-						/* Bits 14-31 reserved */
++	[GENERIC_CHID]					= GENMASK(12, 5),
++	[GENERIC_EE]					= GENMASK(16, 13),
++						/* Bits 17-23 reserved */
++	[GENERIC_PARAMS]				= GENMASK(31, 24),
+ };
+ 
+ REG_FIELDS(GENERIC_CMD, generic_cmd, 0x00025018 + 0x12000 * GSI_EE_AP);
+
+From 1335b903cf2e8aeaca87fd665683384c731ec941 Mon Sep 17 00:00:00 2001
+From: Luca Weiss <luca.weiss@fairphone.com>
+Date: Thu, 9 Apr 2026 10:13:32 +0200
+Subject: [PATCH] net: ipa: Fix decoding EV_PER_EE for IPA v5.0+
+
+Initially 'reg' and 'val' are assigned from HW_PARAM_2.
+
+But since IPA v5.0+ takes EV_PER_EE from HW_PARAM_4 (instead of
+NUM_EV_PER_EE from HW_PARAM_2), we not only need to re-assign 'reg' but
+also read the register value of that register into 'val' so that
+reg_decode() works on the correct value.
+
+Fixes: f651334e1ef5 ("net: ipa: add HW_PARAM_4 GSI register")
+Link: https://sashiko.dev/#/patchset/20260403-milos-ipa-v1-0-01e9e4e03d3e%40fairphone.com?part=2
+Signed-off-by: Luca Weiss <luca.weiss@fairphone.com>
+Reviewed-by: Konrad Dybcio <konrad.dybcio@oss.qualcomm.com>
+Link: https://patch.msgid.link/20260409-ipa-fixes-v1-2-a817c30678ac@fairphone.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/ipa/gsi.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/ipa/gsi.c b/drivers/net/ipa/gsi.c
+index 4c3227e77898cf..624649484d6275 100644
+--- a/drivers/net/ipa/gsi.c
++++ b/drivers/net/ipa/gsi.c
+@@ -2044,6 +2044,7 @@ static int gsi_ring_setup(struct gsi *gsi)
+ 		count = reg_decode(reg, NUM_EV_PER_EE, val);
+ 	} else {
+ 		reg = gsi_reg(gsi, HW_PARAM_4);
++		val = ioread32(gsi->virt + reg_offset(reg));
+ 		count = reg_decode(reg, EV_PER_EE, val);
+ 	}
+ 	if (!count) {
+
+From de08f9585692813bd41ee654fca0487664c4de30 Mon Sep 17 00:00:00 2001
+From: Luca Weiss <luca.weiss@fairphone.com>
+Date: Thu, 9 Apr 2026 10:13:31 +0200
+Subject: [PATCH] net: ipa: Fix programming of QTIME_TIMESTAMP_CFG
+
+The 'val' variable gets overwritten multiple times, discarding previous
+values. Looking at the git log shows these should be combined with |=
+instead.
+
+Fixes: 9265a4f0f0b4 ("net: ipa: define even more IPA register fields")
+Link: https://sashiko.dev/#/patchset/20260403-milos-ipa-v1-0-01e9e4e03d3e%40fairphone.com?part=4
+Signed-off-by: Luca Weiss <luca.weiss@fairphone.com>
+Reviewed-by: Konrad Dybcio <konrad.dybcio@oss.qualcomm.com>
+Link: https://patch.msgid.link/20260409-ipa-fixes-v1-1-a817c30678ac@fairphone.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/ipa/ipa_main.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ipa/ipa_main.c b/drivers/net/ipa/ipa_main.c
+index edead9c48d1fe4..216506eeef1fb3 100644
+--- a/drivers/net/ipa/ipa_main.c
++++ b/drivers/net/ipa/ipa_main.c
+@@ -361,7 +361,7 @@ static void ipa_qtime_config(struct ipa *ipa)
+ {
+ 	const struct reg *reg;
+ 	u32 offset;
+-	u32 val;
++	u32 val = 0;
+ 
+ 	/* Timer clock divider must be disabled when we change the rate */
+ 	reg = ipa_reg(ipa, TIMERS_XO_CLK_DIV_CFG);
+@@ -374,8 +374,8 @@ static void ipa_qtime_config(struct ipa *ipa)
+ 		val |= reg_bit(reg, DPL_TIMESTAMP_SEL);
+ 	}
+ 	/* Configure tag and NAT Qtime timestamp resolution as well */
+-	val = reg_encode(reg, TAG_TIMESTAMP_LSB, TAG_TIMESTAMP_SHIFT);
+-	val = reg_encode(reg, NAT_TIMESTAMP_LSB, NAT_TIMESTAMP_SHIFT);
++	val |= reg_encode(reg, TAG_TIMESTAMP_LSB, TAG_TIMESTAMP_SHIFT);
++	val |= reg_encode(reg, NAT_TIMESTAMP_LSB, NAT_TIMESTAMP_SHIFT);
+ 
+ 	iowrite32(val, ipa->reg_virt + reg_offset(reg));
+ 
+
+From 3cbfd627ee720f3d2460d2cbe2fe9e4130240db6 Mon Sep 17 00:00:00 2001
+From: Jorijn van der Graaf <jorijnvdgraaf@catcrafts.net>
+Date: Sat, 15 Aug 2026 06:03:02 +0200
+Subject: [PATCH] net: ipa: fix stalled modem TX queue after runtime resume
+
+ipa_start_xmit() unconditionally stops the TX queue before calling
+pm_runtime_get(), relying on the wake scheduled by runtime resume
+(ipa_modem_wake_queue_work()) to restart it once power is ACTIVE.
+But that work is queued from within the runtime resume callback,
+before the device's power state reaches RPM_ACTIVE, so it can run
+while the device is still RPM_RESUMING.  The wake is then consumed
+too early: the transmit it restarts stops the queue again,
+pm_runtime_get() returns -EINPROGRESS without arranging any future
+wake (deferred_resume exists only for RPM_SUSPENDING), and after the
+resume completes nothing is left to wake the queue.  Transmit stalls
+permanently: packets pile up in the qdisc behind the stopped queue,
+the device runtime-suspends, and since the netdev registers no
+ndo_tx_timeout the watchdog never fires.  Observed on SM7635
+(Fairphone 6) as the cellular data path going permanently deaf
+within hours, RX included, since nothing resumes the suspended
+endpoints.
+
+Close the window by making the wake work wait for the resume to
+complete (pm_runtime_get_sync()) before waking the queue.  Every
+queue stop is then guaranteed a later wake that happens while power
+is ACTIVE; a transmit racing a new suspend/resume cycle re-schedules
+the work.  If the device could not be resumed, wake the queue anyway
+so pending packets are dropped by the transmit path rather than
+stranded.
+
+The STARTED power flag used to narrow this window: a wake running
+before the transmit path's stop suppressed that stop, but only once,
+as the flag was cleared by the first stop it absorbed.  Removing the
+flag made a single transmit during an in-flight resume sufficient to
+strand the queue, which is the form observed.
+
+With an accelerated reproducer (autosuspend delay shortened to 5 ms,
+~20 packets/s of TX), an unpatched kernel stalled three times in
+230 s / 4380 packets; with this patch the same test ran 3601 s /
+70298 packets without a stall.
+
+Fixes: 688de12f080f ("net: ipa: kill the STARTED IPA power flag")
+Cc: stable@vger.kernel.org
+Signed-off-by: Jorijn van der Graaf <jorijnvdgraaf@catcrafts.net>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Link: https://patch.msgid.link/20260815040302.653650-1-jorijnvdgraaf@catcrafts.net
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/ipa/ipa_modem.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ipa/ipa_modem.c b/drivers/net/ipa/ipa_modem.c
+index 9b136f6b8b4ae8..d84c1dbd3b1a84 100644
+--- a/drivers/net/ipa/ipa_modem.c
++++ b/drivers/net/ipa/ipa_modem.c
+@@ -266,13 +266,29 @@ void ipa_modem_suspend(struct net_device *netdev)
+  * the modem.  We can't enable the queue directly in ipa_modem_resume()
+  * because transmits restart the instant the queue is awakened; but the
+  * device power state won't be ACTIVE until *after* ipa_modem_resume()
+- * returns.
++ * returns.  A transmit restarted before that would stop the queue
++ * again and get -EINPROGRESS from pm_runtime_get(), and with this
++ * work having already run, nothing would ever wake the queue again.
++ * So wait for the resume to complete before waking the queue.
+  */
+ static void ipa_modem_wake_queue_work(struct work_struct *work)
+ {
+ 	struct ipa_priv *priv = container_of(work, struct ipa_priv, work);
++	struct device *dev = priv->ipa->dev;
++	int ret;
++
++	ret = pm_runtime_get_sync(dev);
+ 
++	/* Wake the queue even if the device could not be resumed, so
++	 * that pending packets are dropped by the transmit path rather
++	 * than stranded behind a stopped queue.
++	 */
+ 	netif_wake_queue(priv->tx->netdev);
++
++	if (ret < 0)
++		pm_runtime_put_noidle(dev);
++	else
++		(void)pm_runtime_put_autosuspend(dev);
+ }
+ 
+ /** ipa_modem_resume() - resume callback for runtime_pm
+
