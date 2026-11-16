@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=5
+pkgrel=6
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -35,7 +35,7 @@ depends="
 	soc-qcom-modem
 	soc-qcom-qbootctl
 "
-makedepends="devicepkg-dev"
+makedepends="alsa-utils devicepkg-dev m4"
 subpackages="
 	$pkgname-kernel-stable:kernel_stable
 	$pkgname-kernel-next:kernel_next
@@ -60,10 +60,22 @@ source="
 	cupid-sensor-registry.service
 	90-device-xiaomi-cupid.preset
 	81-libssc-xiaomi-cupid.rules
+	audioreach-topology-$_tplg_commit.tar.gz::https://github.com/linux-msm/audioreach-topology/archive/$_tplg_commit.tar.gz
+	Xiaomi-12.m4
+	module_tdm.m4
+	subgraph-device-tdm-playback.m4
 "
+# linux-msm/audioreach-topology, 2026-10-20 (its SM8450-HDK.m4 builds
+# byte-identical to linux-firmware's SM8450-HDK-tplg.bin)
+_tplg_commit="d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037"
 
 build() {
 	devicepkg_build $startdir $pkgname
+
+	# ADSP topology: the HDK one with the speakers on tertiary TDM.
+	m4 -I "$srcdir"/audioreach-topology-$_tplg_commit -I "$srcdir" \
+		"$srcdir"/Xiaomi-12.m4 > "$srcdir"/Xiaomi-12.conf
+	alsatplg -c "$srcdir"/Xiaomi-12.conf -o "$srcdir"/Xiaomi-12-tplg.bin
 }
 
 package() {
@@ -98,13 +110,9 @@ package() {
 		"$pkgdir"/usr/share/alsa/ucm2/Qualcomm/sm8450/Cupid/HiFi.conf
 
 	# ADSP topology: the sound card requests qcom/sm8450/Xiaomi-12-tplg.bin
-	# and tears itself down without it. The SM8450 HDK topology from
-	# linux-firmware is the one this ADSP firmware accepts. Both the plain
-	# and the zstd name are linked so whichever linux-firmware ships works.
-	mkdir -p "$pkgdir"/lib/firmware/qcom/sm8450
-	ln -s SM8450-HDK-tplg.bin.zst \
-		"$pkgdir"/lib/firmware/qcom/sm8450/Xiaomi-12-tplg.bin.zst
-	ln -s SM8450-HDK-tplg.bin \
+	# and tears itself down without it. Built from Xiaomi-12.m4: the SM8450
+	# HDK topology with the speakers on the tertiary TDM interface.
+	install -Dm644 "$srcdir"/Xiaomi-12-tplg.bin \
 		"$pkgdir"/lib/firmware/qcom/sm8450/Xiaomi-12-tplg.bin
 }
 
@@ -176,8 +184,8 @@ c4dc2a484216bf3fce28913f7d94ceb0a229f5c968fb2d3c0c1703692c45fdb21223522aa30d22d6
 8aa9687e7a0c832967d123fdea4307e75b9368d3893ac66fd8c10ab0649a1e977b6a227e1427200940b25b42c85af627ba379cdb7ad120ad32961328fc2d91a2  modules-initfs
 da071f59a4d0c7ae01b1890141902000673f4502009585f62ff1f178eb5f69237b2c3ce04d9f88cd120e21c6f64e2b3837af682313582002cf9b38e3a59a03f4  cupid-modules.conf
 533195caa6ecf1ba8d23d15f29dee6f794c0532a31746f3ede44b7c070e1381ba9148d044e481cfc0baf3239762942aa1974d8d6be457af2ec11b337d10433dc  wifi-powersave-off.conf
-c824dcc7853b1fde461e429ec2b54a3b94f605c326749d484a8c7a17b08f7bdf93f421f50263ce9f35abcc6c03fab501f3bac2f1361723ee71e04deef67a77e1  Xiaomi-12.conf
-7615196803c68dd5c5a9b561abfa6b0ed21ed76986653d9f237654451eb32f7f7b1bc867bd8a9b585e8c85753ff47f69f8cd48c881eab6a023bc32b0b5c41a5e  HiFi.conf
+6eec04107fb2e920a33d2f89d21a4000d00621713b724beeca18fdcd099d9f45f3391f3f8a1cde6648da450c56808a2a0280a04da806086679d9e9100998a266  Xiaomi-12.conf
+8b973452db4d1eebe53a81617f707de01b1ab3fa1a5f1ccc0192e8b00e7e8b223bab93f58efcd365f3e878b8c9f44e5071b46dacbe35080a6e2fcfc669011f2b  HiFi.conf
 d44b9da15ebe2fb75369abd7b37f987457ef6c25a861a4c8dacde88ce5ee11e4c15d4e1bc2d37f68a30ae0d51b84e0e3e02166b07b38f78a111f8b80534a907d  phoc.ini
 a3a1515987fa3e8ce2c67fdc13ed21a837c0d1d420ad4b51eb23a6fc799b8c3dd4e12d8f8bcf846283ecd898e3a6c9c5cec13def5ef3a97a7ff5d3a00cdf2884  xiaomi-cupid.json
 c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f97d83ba75eab23885582375214dccdc890dcdc5656ae7ea6  50-cupid-gmobile.conf
@@ -187,4 +195,8 @@ c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f
 789c3be3bc9c288fde49a6568e7175759ab068bb73fac134c76b755dacdc9e0540ee03a504586d0c661094e5344a3c220bd6f5c6143da8ecf45a32fb3f146409  cupid-sensor-registry.service
 7c0dd13c2f73f920acf98842e3d01abf457999ce90fb472dc061f71e73dc82adcd0fdb4657a5553aa94439a11b7f94a9cff130fd98f2ddeebf53dfc6fb66e302  90-device-xiaomi-cupid.preset
 2f47bcd412f51054f38642c458ca6811de5096630305335ac82c70dbd742ba4a6034154054d042f834250651618823e875f8f70f7fe027ed3dc90b626fe49270  81-libssc-xiaomi-cupid.rules
+6c33f96ca1b9a127758bf8f9ff2df087c015bfae1f8503ec2d2601f952ce957eb9642cfbfc0df80db3fda8cd445537f80e3f903c2c681f4e5abdd3d8fb2a73d6  audioreach-topology-d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037.tar.gz
+f1ccd1ea74f1fec9bb24fca04fb54236a4baa779235280bfd9e078351737f6f312620508dfb950430776aedc169e874804972981f7fb87550541bc875073454f  Xiaomi-12.m4
+f5a9e68da20da7bc088a9da6be3b90ccd8a598000425613115a1831ed6388163b8583e67db667fad232e7702dc0add7bd1d27dcd1e3ff6afd73bbe9da830707f  module_tdm.m4
+b85db92e5ddeb62cec33a53b089e2125700c2eee32b66bfca7ecf411d37ccbe014a50e7e1290ac18188003a20e942a673e8576e5e4885bbdb2defbb674db7109  subgraph-device-tdm-playback.m4
 "

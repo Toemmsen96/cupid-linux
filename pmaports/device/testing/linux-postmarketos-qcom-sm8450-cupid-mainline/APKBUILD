@@ -24,11 +24,14 @@
 # module tables (r4). 0030 backports the CAMSS C-PHY series (David
 # Heidelberg, v9), 0031 adds the SM8450 C-PHY sequence from the downstream
 # camera driver, 0032 a driver for the IMX766 main camera (r5).
+# 0033-0036: speakers. Legacy AudioReach TDM endpoint (Tatsuki Tanaka, via
+# dianqk's marble port), 96 kHz TDM, CS35L41 slots through the channel map
+# and a Xiaomi 12 card with the stock TDM backend and LPASS votes (r6).
 # Keep stable/next as fallbacks: pmbootstrap config kernel next
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=5
+pkgrel=6
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -84,6 +87,10 @@ source="
 	0030-media-qcom-camss-c-phy-support-backport.patch
 	0031-media-qcom-camss-c-phy-on-sm8450.patch
 	0032-media-i2c-add-a-sony-imx766-driver.patch
+	0033-asoc-qcom-audioreach-legacy-tdm-modules.patch
+	0034-asoc-qcom-q6dsp-advertise-96-khz-tdm-playback.patch
+	0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
+	0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
 "
 builddir="$srcdir/linux-$pkgver"
 
@@ -125,7 +132,7 @@ package() {
 sha512sums="
 db5508c3cf8b613b4680022eb785c036bcf8a5c952f8d0b2f3c2c7dc16779cf8bd954e0bca0b0b52451bac61430a687ae73205574f002f3b60de886640ebb9b0  linux-7.3.4.tar.xz
 9b9584c2b4b2afb4744aa27d8eb909bcc95ec667a4b903243de91d32869671d3b973c0d0f6848d3509cf65bbb5b55033e3a85a57beda557bc1015694c4e05747  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
-fe162816eb403282176a88f15b36f6069e6de38da9e6048aa769e34cf4359bb1bf00d5d252618525f817e12cfe1a13af750405f6a9ec8acb6119e46806eae050  sm8450-xiaomi-cupid.dts
+43635f4bcc67159dc1fa3a59c36e78700a7b703b02b94934b38dad5a93bc8caa81286ceb41ce23a219b8626e467f828c9eddd55ec8490778b8c3f6be123512af  sm8450-xiaomi-cupid.dts
 f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd5d905d95de266a54eeb5ab88bd2924cd7e5878dbd4224096  fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
 05f0f5ffa8e5b42052f0ba05a99a463f857ba5c1283b45761cb2917ab6e7fd6d38a4ba7bc40578d7816bb020e2ff27083577c9fd89b454d1854bb32349beba8f  fork-0002-input-touchscreen-add-fts_spi-driver.patch
 258b8914f95d863dd6a58f73e153c0c805edc103e324c55439fd1d4c930fccc1e434c5a32a9ba50c06f44b2f5cbe1c5b7600744804efb8b1be2eb8e0f79f7e10  fork-0003-arm64-dts-qcom-sm8450-add-clock-names-to-mdss.patch
@@ -154,4 +161,8 @@ ef2d5ed97a165eb488e503de9d59225956cd183f9a184bf26073dfbb13db8c08eeb03f45c20748b8
 5e28789da35ee3032bbf551c21943abe34dfc7d7fb4df8d81f0e20e3bef39a1a4f7cd35b8756f3931041f28a9acd849a65b9dc391fb932bfe522e0f114d8ed37  0030-media-qcom-camss-c-phy-support-backport.patch
 2e46d1f1ca4dd679aaf393c438f0693bbe205e4f8ec869d6b28ee3ff5594be760232127c9256a48e5bfa855415f8bb68e76c32baca9a9af83805a67c83adc23c  0031-media-qcom-camss-c-phy-on-sm8450.patch
 39e01530b4544e7c377363c658aba82be30c5140aca890fd73632b9c173661c98ec0433c231a070c0652ef8966f024e877543c61cbf3ea8f31007540717d2422  0032-media-i2c-add-a-sony-imx766-driver.patch
+99faf19411816309304e52eb59e5a8c00584615d25a2da8c359251f2c5a960ac0141162c8006f9c87dbd225ece2aad0eaccd806126f59efbefc6619b667c4d2a  0033-asoc-qcom-audioreach-legacy-tdm-modules.patch
+3fb70150a762cec876fad66e3863ef75d1509f43b231c0e4913af547127448c5b61db008c77c4ade48fac3879fa78970ed9c7ba9b5a1ad2c628d831ac0e0db38  0034-asoc-qcom-q6dsp-advertise-96-khz-tdm-playback.patch
+9c4c1d816eab4389cb56fb7ffe081bc9b69784268b04cc260a7c59f2ac76cf7414bc9bdeaf09438e1aba7f5366ecfeb96506ebe74034613f965e13ed3222a545  0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
+69a437fb63792d8d2baef74a4a7b394fadaa767c8cef74dc0b52c4b831d88aa100e26c504046acd14fd3a1bcd899cf731a6db1bbd45008dc7b63017b554759a1  0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
 "

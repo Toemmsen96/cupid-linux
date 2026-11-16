@@ -1434,13 +1434,24 @@
 };
 
 &sound {
-	compatible = "qcom,sm8450-sndcard";
+	compatible = "xiaomi,cupid-sndcard", "qcom,sm8450-sndcard";
 	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&tert_tdm_clk_active &tert_tdm_ws_active
 			&tert_tdm_din_active &tert_tdm_dout_active>;
 	pinctrl-1 = <&tert_tdm_clk_sleep &tert_tdm_ws_sleep
 			&tert_tdm_din_sleep &tert_tdm_dout_sleep>;
 	model = "Xiaomi-12";
+
+	/*
+	 * Speaker TDM: the stock "qcom,mi2s-tdm-is-hw-vote-needed" core vote,
+	 * the DCODEC vote (the LPASS macros only hold theirs while active)
+	 * and the tertiary TDM bit clock, held by the card for the backend
+	 * session.
+	 */
+	clocks = <&q6prmcc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+		 <&q6prmcc LPASS_CLK_ID_TER_TDM_IBIT LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+		 <&q6prmcc LPASS_HW_DCODEC_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+	clock-names = "tdm-vote", "tdm-bclk", "tdm-dcodec-vote";
 
 	/*
 	 * Without any routing DAPM has no path from the codec DAIs to anything
@@ -1552,15 +1563,26 @@
 		};
 	};
 
+	/*
+	 * Stock speaker TDM: 96 kHz, 32-bit samples in four 32-bit slots,
+	 * top amplifier slot 0, bottom slot 1 (stock also drives slot 2 for
+	 * the speaker DSP's ultrasound, unused without its firmware).
+	 */
 	speaker-playback-dai-link {
 		link-name = "Primary Spkr Playback";
 
 		cpu {
 			sound-dai = <&q6apmbedai TERTIARY_TDM_RX_0>;
+			dai-tdm-slot-num = <4>;
+			dai-tdm-slot-width = <32>;
+			dai-tdm-slot-rx-mask = <1 1 0 0>;
 		};
 
 		codec {
 			sound-dai = <&cs35l41_t 0>, <&cs35l41_b 0>;
+			dai-tdm-slot-num = <4>;
+			dai-tdm-slot-width = <32>;
+			dai-tdm-slot-rx-mask = <1 1 0 0>;
 		};
 
 		platform {

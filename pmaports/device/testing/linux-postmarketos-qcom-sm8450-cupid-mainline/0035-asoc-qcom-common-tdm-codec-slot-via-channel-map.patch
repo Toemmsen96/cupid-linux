@@ -1,0 +1,73 @@
+From 5f7fe5a9a79e007e8e08ee8a28ea9baddab6b4a3 Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 16:59:19 +0100
+Subject: [PATCH] ASoC: qcom: common: give TDM codecs without set_tdm_slot
+ their slot
+
+Speaker amplifiers like the CS35L41 have no set_tdm_slot operation; they
+take their slot through set_channel_map. When a TDM link applies its
+dai-tdm-slot layout, a codec DAI that returns -ENOTSUPP failed the whole
+hw_params. Fall back to the channel map instead: the n-th codec DAI of the
+link gets the n-th active slot of the link's mask, one slot each way, so
+two amplifiers on one link with dai-tdm-slot-rx-mask = <1 1 0 0> play
+slots 0 and 1.
+
+Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+---
+ sound/soc/qcom/common.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/sound/soc/qcom/common.c b/sound/soc/qcom/common.c
+index d9f256d51..260b9b319 100644
+--- a/sound/soc/qcom/common.c
++++ b/sound/soc/qcom/common.c
+@@ -3,6 +3,7 @@
+ // Copyright (c) 2018, The Linux Foundation. All rights reserved.
+ 
+ #include <dt-bindings/sound/qcom,q6afe.h>
++#include <linux/bitops.h>
+ #include <linux/module.h>
+ #include <sound/jack.h>
+ #include <linux/input-event-codes.h>
+@@ -133,6 +134,32 @@ int qcom_snd_get_dai_tdm_slots(struct snd_soc_pcm_runtime *rtd,
+ }
+ EXPORT_SYMBOL_GPL(qcom_snd_get_dai_tdm_slots);
+ 
++/*
++ * Codecs without set_tdm_slot (CS35L41) take their slot through the channel
++ * map: the n-th codec DAI of a link with several amplifiers gets the n-th
++ * active slot of the link's mask, one slot each way.
++ */
++static int qcom_snd_set_codec_slot(struct snd_soc_dai *codec_dai, int n,
++				   const struct qcom_snd_tdm_slot_cfg *cfg)
++{
++	unsigned long rx_mask = cfg->rx_mask, tx_mask = cfg->tx_mask;
++	unsigned int rx_slot, tx_slot;
++	unsigned int rx_n = 0, tx_n = 0;
++	int ret;
++
++	rx_slot = find_nth_bit(&rx_mask, 32, n);
++	if (rx_slot < 32)
++		rx_n = 1;
++	tx_slot = find_nth_bit(&tx_mask, 32, n);
++	if (tx_slot < 32)
++		tx_n = 1;
++	if (!rx_n && !tx_n)
++		return 0;
++
++	ret = snd_soc_dai_set_channel_map(codec_dai, tx_n, &tx_slot, rx_n, &rx_slot);
++	return ret == -ENOTSUPP ? 0 : ret;
++}
++
+ int qcom_snd_apply_dai_tdm_slots_cfg(struct snd_soc_pcm_runtime *rtd,
+ 				     const struct qcom_snd_tdm_slot_cfg *cpu_cfg,
+ 				     const struct qcom_snd_tdm_slot_cfg *codec_cfg)
+@@ -156,6 +183,8 @@ int qcom_snd_apply_dai_tdm_slots_cfg(struct snd_soc_pcm_runtime *rtd,
+ 					       codec_cfg->rx_mask,
+ 					       codec_cfg->slots,
+ 					       codec_cfg->slot_width);
++		if (ret == -ENOTSUPP)
++			ret = qcom_snd_set_codec_slot(codec_dai, i, codec_cfg);
+ 		if (ret)
+ 			return ret;
+ 	}
