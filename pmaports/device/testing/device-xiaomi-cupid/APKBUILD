@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=7
+pkgrel=8
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -74,8 +74,8 @@ build() {
 
 	# ADSP topology: the HDK one with the speakers on tertiary TDM.
 	m4 -I "$srcdir"/audioreach-topology-$_tplg_commit -I "$srcdir" \
-		"$srcdir"/Xiaomi-12.m4 > "$srcdir"/Xiaomi-12.conf
-	alsatplg -c "$srcdir"/Xiaomi-12.conf -o "$srcdir"/Xiaomi-12-tplg.bin
+		"$srcdir"/Xiaomi-12.m4 > "$srcdir"/Xiaomi-12-tplg.conf
+	alsatplg -c "$srcdir"/Xiaomi-12-tplg.conf -o "$srcdir"/Xiaomi-12-tplg.bin
 }
 
 package() {
