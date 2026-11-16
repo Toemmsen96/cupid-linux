@@ -14,6 +14,10 @@ pkgdesc="ModemManager library"
 url="https://www.freedesktop.org/wiki/Software/ModemManager"
 arch="all"
 license="GPL-2.0-or-later AND LGPL-2.1-or-later"
+# test-plugin-generic, test-stub and test-base-call abort (SIGABRT) when
+# pmbootstrap runs them under qemu while cross compiling; the patch only
+# touches mm-shared-qmi.c, verified on the phone instead.
+options="!check"
 depends="
 	dbus
 	libmm-glib=$pkgver-r$pkgrel
