@@ -195,6 +195,19 @@
 		pinctrl-names = "default";
 	};
 
+	/* telemacro analog, external LDO switched by TLMM (stock CAMERA_M_AVDD) */
+	cam_macro_avdd: regulator-cam-macro-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_macro_avdd";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		gpio = <&tlmm 71 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&vreg_bob>;
+		pinctrl-0 = <&cam_macro_avdd_en>;
+		pinctrl-names = "default";
+	};
+
 	vph_pwr: vph-pwr-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vph_pwr";
@@ -1105,6 +1118,21 @@
 		bias-disable;
 	};
 
+	/* stock cam_sensor_mclk3_active: telemacro */
+	cam_mclk3_default: cam-mclk3-default-state {
+		pins = "gpio103";
+		function = "cam_mclk";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	cam_macro_avdd_en: cam-macro-avdd-en-state {
+		pins = "gpio71";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
 	cam_mclk1_default: cam-mclk1-default-state {
 		pins = "gpio101";
 		function = "cam_mclk";
@@ -1958,6 +1986,16 @@
 			};
 		};
 
+		/* telemacro S5K5E9, stock csiphy-sd-index 1 */
+		port@1 {
+			csiphy1_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				remote-endpoint = <&cam_macro_ep>;
+			};
+		};
+
 		/* front OV32B40, stock csiphy-sd-index 3 */
 		port@3 {
 			csiphy3_ep: endpoint {
@@ -2038,6 +2076,45 @@
 				data-lanes = <1 2 3 4>;
 				link-frequencies = /bits/ 64 <842400000>;
 				remote-endpoint = <&csiphy3_ep>;
+			};
+		};
+	};
+};
+
+&cci1 {
+	status = "okay";
+};
+
+&cci1_i2c0 {
+	/*
+	 * Telemacro: Samsung S5K5E9 (stock qcom,cam-sensor3, CamX slave
+	 * address 0x5a), two lanes into CSIPHY1, MCLK3 at 19.2 MHz, reset
+	 * gpio128. Register tables from the stock CamX sensor module.
+	 */
+	camera@2d {
+		compatible = "samsung,s5k5e9";
+		reg = <0x2d>;
+
+		clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		assigned-clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		assigned-clock-rates = <19200000>;
+
+		reset-gpios = <&tlmm 128 GPIO_ACTIVE_LOW>;
+		pinctrl-0 = <&cam_mclk3_default>;
+		pinctrl-names = "default";
+
+		avdd-supply = <&cam_macro_avdd>;
+		dvdd-supply = <&cam_l1>;
+		dovdd-supply = <&cam_l5>;
+
+		orientation = <1>;	/* back */
+		rotation = <90>;
+
+		port {
+			cam_macro_ep: endpoint {
+				data-lanes = <1 2>;
+				link-frequencies = /bits/ 64 <438400000>;
+				remote-endpoint = <&csiphy1_ep>;
 			};
 		};
 	};
