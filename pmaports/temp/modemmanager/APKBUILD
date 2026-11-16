@@ -1,7 +1,9 @@
 # cupid-linux overlay of Alpine community/modemmanager (same snapshot) with
 # 0100: QMI LOC registration with a client type, before starting the
 # session; without it the SM8450 modem refuses to start GPS. pkgrel 100 keeps
-# it ahead of Alpine rebuilds of this snapshot.
+# it ahead of Alpine rebuilds of this snapshot. makedepends leaves out
+# $depends_dev (our own libmm-glib at this pkgrel), which pmbootstrap would
+# otherwise try to install before building it.
 # Contributor: Stuart Cardall <developer@it-offshore.co.uk>
 maintainer="Achill Gilgenast <achill@achill.org>"
 pkgname=modemmanager
@@ -20,7 +22,6 @@ depends="
 	"
 depends_dev="libmm-glib=$pkgver-r$pkgrel"
 makedepends="
-	$depends_dev
 	bash-completion-dev
 	dbus-dev
 	elogind-dev
