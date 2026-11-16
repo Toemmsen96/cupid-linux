@@ -51,6 +51,18 @@ case "$1" in
 		;;
 esac
 
+# Switching kernels (stable <-> next) in an existing rootfs chroot fails: both
+# packages own /boot/vmlinuz and the dtbs, so apk refuses to add the new one
+# and leaves a half-installed rootfs. Start the chroots fresh in that case
+# (zap keeps the built packages).
+rootfs_db="$WORK/chroot_rootfs_xiaomi-cupid/lib/apk/db/installed"
+if [ -r "$rootfs_db" ] &&
+	grep -E '^P:linux-postmarketos-qcom-sm8450-cupid(-next)?$' "$rootfs_db" |
+	grep -qvx "P:$kernel_pkg"; then
+	echo "==> rootfs has another kernel installed, zapping the chroots first"
+	pmb -y zap
+fi
+
 echo "==> installing image"
 # --single-partition: boot and root in one filesystem, flashed to userdata as
 # is. That is what the initramfs expects on a fastboot device, and it avoids
