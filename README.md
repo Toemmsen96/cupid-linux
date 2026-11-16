@@ -41,7 +41,7 @@ First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on 2026-11-12.
 
 | Works | Partial / open | Not working |
 |---|---|---|
-| boot, USB networking + SSH, storage, display (120 Hz), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery level, mobile data (LTE/5G), USB-C headphones, zram swap | display shows sporadic corruption on interaction; calls/SMS untested | internal speakers, camera, haptics (driver crashes, disabled), motion sensors (light works), fingerprint; NFC driver loads, untested |
+| boot, USB networking + SSH, storage, display (120 Hz), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery level, mobile data (LTE/5G), USB-C headphones, zram swap; on the 7.3 kernel also the internal speakers and all four cameras (raw, libcamera software ISP) | display shows sporadic corruption on interaction (6.13); calls/SMS untested; camera tuning, autofocus | haptics (driver crashes, disabled), motion sensors (light works), fingerprint; NFC driver loads, untested |
 
 The details, measurements and what was ruled out are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md); fixes for problems
@@ -62,7 +62,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Touch | Driver patches: one full-duplex SPI transfer per read (GENI returned zeros for the stock two-transfer shape), super-resolution coordinate decode, palm rejection. Devicetree: `fts,irq-flags` with `IRQF_ONESHOT`, touch rails always on. Firmware `st_fts_l3.ftb` packaged (driver refuses to probe without it). Module autoloaded. | patches 0002, 0003; `firmware-xiaomi-cupid-touchscreen` |
 | WiFi | PCIe link-training retry with endpoint reset, ath11k firmware reset on WMI wedge, missing `vddpmumx`/`vddpmucx` PMU supplies, `max-link-speed = <2>`, WCN rails always on, ASPM forced to `performance`, NetworkManager power save off. | patches 0004, 0005; devicetree; deviceinfo cmdline; device package |
 | Bluetooth | Controller comes up unconfigured (no `local-bd-address`); `bootmac` from `soc-qcom` assigns an address at boot. | device package depends |
-| Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`, topology symlink to the HDK topology. USB-C headphones work (verified on cupid); the internal speakers over tertiary TDM remain an unsolved SoC/firmware problem. | patches 0006, 0007, 0008; devicetree; device package |
+| Audio | ADSP service races fixed (GPR callback before probe, PDR ack order, SPF readiness poll), DAPM audio routing from the SM8450 HDK, UCM profile for card `sm8450/Xiaomi-12`, topology symlink to the HDK topology. USB-C headphones work (verified on cupid). Internal speakers (CS35L41 over tertiary TDM) work on the 7.3 kernel with the legacy AudioReach TDM endpoint and a topology built from source. | patches 0006, 0007, 0008; 7.3: 0033-0036; devicetree; device package |
 | Battery | `CONFIG_BATTERY_QCOM_BATTMGR` and `pmic-glink` so the ADSP battery manager reports charge level and state. The cupid firmware never answers `model_name`/`time_to_full_avg`; those reads blocked a second each (~70 errors a minute), the driver now stops asking after three timeouts. | kernel config, patch 0010 |
 | Display | Runs at 120 Hz like stock (selectable 60/90/120 via `panel_l3_42_02_0a_dsc.refresh_rate`); at 60 Hz the OLED's PWM dimming flickered. Brightness is kept while the panel is off instead of failing and leaving DSI in HS mode. DSI byte clock rounded to the PLL rate (upstream backport). | patches 0011, 0014, 0015 |
 | Modem data | IPA v5.1 support backported from the pending upstream "SM8450 IPA support" series, devicetree node enabled, plus the upstream IPA v5.x GSI fixes (event rings were never programmed). Mobile data works. | patches 0012, 0013, 0016 |
@@ -73,9 +73,8 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Phosh | Display scale 2, punch-hole cutout definition for gmobile. | device package `-phosh` |
 | Firmware | Fetched from GitHub instead of git.mainlining.org (which has been returning 502); the modem blob is included in GitHub's archive despite being in LFS. | `firmware-xiaomi-cupid` |
 
-Not addressed yet: camera (no SM8450 CAMSS on mainline), fingerprint, NFC,
-FM, fast charging (vendor charge pumps; expect USB-PD rates), internal
-speakers (CS35L41 over TDM, an AudioReach gap), sensors (need the SLPI and a
+Not addressed yet: fingerprint, NFC, FM, fast charging (vendor charge
+pumps; expect USB-PD rates), camera autofocus/OIS and tuning, sensors (need the SLPI and a
 userspace sensor stack), haptics. Open investigations: the display corruption
 (TE is clean at 120 Hz; stock drives DSC with 10 bpc over RGB101010, which
 6.13's DSI host cannot do yet). Details per component are in

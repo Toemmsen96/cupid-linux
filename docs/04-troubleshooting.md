@@ -108,8 +108,10 @@ add `local-bd-address = [ xx xx xx xx xx xx ];` (little-endian) to the
   missing.
 - Card exists, only "Dummy Output": the UCM profile is not found. It must be
   at `/usr/share/alsa/ucm2/conf.d/sm8450/Xiaomi-12.conf`.
-- Internal speakers silent: expected, see
-  [05-hardware-status.md](05-hardware-status.md). USB-C audio and the
+- Internal speakers silent: they need the 7.3 kernel (`mainline`, pkgrel
+  7+) and device pkgrel 8+ (topology and UCM), see
+  [05-hardware-status.md](05-hardware-status.md#speakers-73). Without a user
+  logged in on the screen PipeWire has no access to the card. USB-C audio and the
   headphone path work.
 
 ## Remoteprocs, battery, modem

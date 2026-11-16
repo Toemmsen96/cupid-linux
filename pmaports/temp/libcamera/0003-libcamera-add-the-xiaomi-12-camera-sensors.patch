@@ -1,0 +1,146 @@
+From e05a91c25978afb3e963520df5ba37f78531b270 Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 17:31:45 +0100
+Subject: [PATCH] libcamera: add the Xiaomi 12 camera sensors
+
+Camera sensor helpers and properties for the four sensors of the Xiaomi 12
+(cupid): Sony IMX766 (main), OmniVision OV13B10 (ultra-wide) and OV32B40
+(front), Samsung S5K5E9 (telemacro). Gain models from the kernel drivers'
+analogue gain controls (Sony 16384 / (16384 - code); OmniVision code / 128
+and code / 256; Samsung code / 32), black level 0x40 at 10 bits, pixel sizes
+and test pattern menus. Sensor delays are not measured yet.
+
+Without a helper the software ISP's AGC treats the gain codes as linear
+gains and the image stays dark.
+
+Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+---
+ src/ipa/libipa/camera_sensor_helper.cpp       | 48 +++++++++++++++++++
+ .../sensor/camera_sensor_properties.cpp       | 38 +++++++++++++++
+ 2 files changed, 86 insertions(+)
+
+diff --git a/src/ipa/libipa/camera_sensor_helper.cpp b/src/ipa/libipa/camera_sensor_helper.cpp
+index 359040e..3af73bb 100644
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -701,6 +701,18 @@ public:
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("imx708", CameraSensorHelperImx708)
+ 
++class CameraSensorHelperImx766 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperImx766()
++	{
++		/* 0x40 at 10 bits, 14-bit gain code (16384 / (16384 - code)). */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 0, 16384, -1, 16384 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("imx766", CameraSensorHelperImx766)
++
+ class CameraSensorHelperOv01a10 : public CameraSensorHelper
+ {
+ public:
+@@ -887,6 +899,42 @@ public:
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("ov13858", CameraSensorHelperOv13858)
+ 
++class CameraSensorHelperOv13b10 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperOv13b10()
++	{
++		/* 0x40 at 10 bits, gain code 0x80 = 1x. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 128 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("ov13b10", CameraSensorHelperOv13b10)
++
++class CameraSensorHelperOv32b40 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperOv32b40()
++	{
++		/* 0x40 at 10 bits, gain code 0x100 = 1x. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 256 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("ov32b40", CameraSensorHelperOv32b40)
++
++class CameraSensorHelperS5k5e9 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperS5k5e9()
++	{
++		/* 0x40 at 10 bits, gain code 0x20 = 1x. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 32 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("s5k5e9", CameraSensorHelperS5k5e9)
++
+ class CameraSensorHelperVd55g1 : public CameraSensorHelper
+ {
+ public:
+diff --git a/src/libcamera/sensor/camera_sensor_properties.cpp b/src/libcamera/sensor/camera_sensor_properties.cpp
+index 20cfd0b..950b84a 100644
+--- a/src/libcamera/sensor/camera_sensor_properties.cpp
++++ b/src/libcamera/sensor/camera_sensor_properties.cpp
+@@ -376,6 +376,17 @@ const CameraSensorProperties *CameraSensorProperties::get(const std::string &sen
+ 				.hblankDelay = 3
+ 			},
+ 		} },
++		{ "imx766", {
++			.unitCellSize = { 1000, 1000 },
++			.testPatternModes = {
++				{ controls::draft::TestPatternModeOff, 0 },
++				{ controls::draft::TestPatternModeSolidColor, 1 },
++				{ controls::draft::TestPatternModeColorBars, 2 },
++				{ controls::draft::TestPatternModeColorBarsFadeToGray, 3 },
++				{ controls::draft::TestPatternModePn9, 4 },
++			},
++			.sensorDelays = { },
++		} },
+ 		{ "ov08d10", {
+ 			.unitCellSize = { 1120, 1120 },
+ 			.testPatternModes =  {
+@@ -571,6 +582,33 @@ const CameraSensorProperties *CameraSensorProperties::get(const std::string &sen
+ 			},
+ 			.sensorDelays = { },
+ 		} },
++		{ "ov13b10", {
++			.unitCellSize = { 1120, 1120 },
++			.testPatternModes = {
++				{ controls::draft::TestPatternModeOff, 0 },
++				{ controls::draft::TestPatternModeColorBars, 1 },
++			},
++			.sensorDelays = { },
++		} },
++		{ "ov32b40", {
++			.unitCellSize = { 700, 700 },
++			.testPatternModes = {
++				{ controls::draft::TestPatternModeOff, 0 },
++				{ controls::draft::TestPatternModeColorBars, 1 },
++			},
++			.sensorDelays = { },
++		} },
++		{ "s5k5e9", {
++			.unitCellSize = { 1120, 1120 },
++			.testPatternModes = {
++				{ controls::draft::TestPatternModeOff, 0 },
++				{ controls::draft::TestPatternModeSolidColor, 1 },
++				{ controls::draft::TestPatternModeColorBars, 2 },
++				{ controls::draft::TestPatternModeColorBarsFadeToGray, 3 },
++				{ controls::draft::TestPatternModePn9, 4 },
++			},
++			.sensorDelays = { },
++		} },
+ 		{ "vd55g1", {
+ 			.unitCellSize = { 2160, 2160 },
+ 			.testPatternModes = {
+-- 
+2.56.1
+

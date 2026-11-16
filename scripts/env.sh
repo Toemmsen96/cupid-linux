@@ -22,6 +22,9 @@ PMAPORTS_URL="https://gitlab.postmarketos.org/postmarketOS/pmaports.git"
 
 # The package directories this repository carries on top of pmaports.
 PACKAGES="device-xiaomi-cupid firmware-xiaomi-cupid linux-postmarketos-qcom-sm8450-cupid linux-postmarketos-qcom-sm8450-cupid-next linux-postmarketos-qcom-sm8450-cupid-mainline"
+# pmaports temp/ packages this repository replaces (newer version or extra
+# patches): libcamera with the Xiaomi 12 camera sensors.
+TEMP_PACKAGES="libcamera"
 
 pmb() {
 	pmbootstrap -c "$CFG" "$@"

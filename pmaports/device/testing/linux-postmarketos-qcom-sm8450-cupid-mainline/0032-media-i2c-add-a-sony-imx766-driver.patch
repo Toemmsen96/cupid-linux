@@ -4,9 +4,10 @@ Date: Mon, 16 Nov 2026 16:45:04 +0100
 Subject: [PATCH] media: i2c: add a Sony IMX766 driver
 
 The IMX766 is the 50 megapixel main camera of the Xiaomi 12 (cupid),
-connected over three MIPI C-PHY trios. One fixed mode: 4096x3072 RAW10
-(2x2 binned full array, BGGR as mounted) at 30 fps, 1713.6 Msps per trio
-from a 19.2 MHz MCLK. The register sequences and the power sequence are
+connected over three MIPI C-PHY trios. Two modes, both the whole array
+at 30 fps, 1713.6 Msps per trio from a 19.2 MHz MCLK, RAW10 (BGGR as
+mounted): 4096x3072 (2x2 binned) and 2048x1536 (4x4 binned, which keeps
+software ISP previews at 30 fps). The register sequences and the power sequence are
 those of the stock CamX sensor module
 (com.qti.sensormodule.cupid_semco_imx766_wide), decoded from the vendor
 partition. Exposure, analogue gain (Sony 16384 / (16384 - code), up to
@@ -19,9 +20,8 @@ Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
 ---
  drivers/media/i2c/Kconfig  |   11 +
  drivers/media/i2c/Makefile |    1 +
- drivers/media/i2c/imx766.c | 1457 ++++++++++++++++++++++++++++++++++++
- 3 files changed, 1469 insertions(+)
- create mode 100644 drivers/media/i2c/imx766.c
+ drivers/media/i2c/imx766.c | 1628 ++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 1640 insertions(+)
 
 diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
 index 716e4a473..6b274f8c9 100644
@@ -59,16 +59,17 @@ index f4021c831..03d2ee846 100644
  obj-$(CONFIG_VIDEO_ISL7998X) += isl7998x.o
 diff --git a/drivers/media/i2c/imx766.c b/drivers/media/i2c/imx766.c
 new file mode 100644
-index 000000000..94d1c98c7
+index 000000000..773f849f8
 --- /dev/null
 +++ b/drivers/media/i2c/imx766.c
-@@ -0,0 +1,1457 @@
+@@ -0,0 +1,1628 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Sony IMX766 image sensor driver
 + *
-+ * One fixed mode: 4096x3072 RAW10 (2x2 binned full array) at 30 fps over
-+ * three MIPI C-PHY trios at 1713.6 Msps from a 19.2 MHz MCLK. The register
++ * Two modes, both the whole array at 30 fps over three MIPI C-PHY trios at
++ * 1713.6 Msps from a 19.2 MHz MCLK: 4096x3072 RAW10 (2x2 binned) and
++ * 2048x1536 (4x4 binned, for previews). The register
 + * sequences and the power sequence are those of the Xiaomi 12 main camera
 + * module (CamX sensor module com.qti.sensormodule.cupid_semco_imx766_wide).
 + */
@@ -113,11 +114,6 @@ index 000000000..94d1c98c7
 +
 +#define IMX766_NATIVE_WIDTH		8192
 +#define IMX766_NATIVE_HEIGHT		6144
-+#define IMX766_WIDTH			4096
-+#define IMX766_HEIGHT			3072
-+
-+#define IMX766_LINE_LENGTH		15616
-+#define IMX766_FRAME_LENGTH		3824
 +#define IMX766_FRAME_LENGTH_MAX		0xffff
 +#define IMX766_EXPOSURE_MARGIN		48
 +#define IMX766_EXPOSURE_MIN		8
@@ -982,6 +978,138 @@ index 000000000..94d1c98c7
 +	{ CCI_REG8(0x3069), 0x30 },
 +};
 +
++static const struct cci_reg_sequence imx766_2048x1536_regs[] = {
++	{ CCI_REG8(0x0112), 0x0a },
++	{ CCI_REG8(0x0113), 0x0a },
++	{ CCI_REG8(0x0114), 0x02 },
++	{ CCI_REG8(0x0342), 0x22 },
++	{ CCI_REG8(0x0343), 0x70 },
++	{ CCI_REG8(0x0340), 0x1a },
++	{ CCI_REG8(0x0341), 0x74 },
++	{ CCI_REG8(0x0344), 0x00 },
++	{ CCI_REG8(0x0345), 0x00 },
++	{ CCI_REG8(0x0346), 0x00 },
++	{ CCI_REG8(0x0347), 0x00 },
++	{ CCI_REG8(0x0348), 0x1f },
++	{ CCI_REG8(0x0349), 0xff },
++	{ CCI_REG8(0x034a), 0x17 },
++	{ CCI_REG8(0x034b), 0xff },
++	{ CCI_REG8(0x0900), 0x01 },
++	{ CCI_REG8(0x0901), 0x44 },
++	{ CCI_REG8(0x0902), 0x09 },
++	{ CCI_REG8(0x3005), 0x02 },
++	{ CCI_REG8(0x3120), 0x04 },
++	{ CCI_REG8(0x3121), 0x00 },
++	{ CCI_REG8(0x3200), 0x43 },
++	{ CCI_REG8(0x3201), 0x43 },
++	{ CCI_REG8(0x32d6), 0x00 },
++	{ CCI_REG8(0x0408), 0x00 },
++	{ CCI_REG8(0x0409), 0x00 },
++	{ CCI_REG8(0x040a), 0x00 },
++	{ CCI_REG8(0x040b), 0x00 },
++	{ CCI_REG8(0x040c), 0x08 },
++	{ CCI_REG8(0x040d), 0x00 },
++	{ CCI_REG8(0x040e), 0x06 },
++	{ CCI_REG8(0x040f), 0x00 },
++	{ CCI_REG8(0x034c), 0x08 },
++	{ CCI_REG8(0x034d), 0x00 },
++	{ CCI_REG8(0x034e), 0x06 },
++	{ CCI_REG8(0x034f), 0x00 },
++	{ CCI_REG8(0x0301), 0x05 },
++	{ CCI_REG8(0x0303), 0x02 },
++	{ CCI_REG8(0x0305), 0x03 },
++	{ CCI_REG8(0x0306), 0x00 },
++	{ CCI_REG8(0x0307), 0xaf },
++	{ CCI_REG8(0x030b), 0x02 },
++	{ CCI_REG8(0x030d), 0x02 },
++	{ CCI_REG8(0x030e), 0x01 },
++	{ CCI_REG8(0x030f), 0x65 },
++	{ CCI_REG8(0x30cb), 0x00 },
++	{ CCI_REG8(0x30cc), 0x10 },
++	{ CCI_REG8(0x30cd), 0x00 },
++	{ CCI_REG8(0x30ce), 0x03 },
++	{ CCI_REG8(0x30cf), 0x00 },
++	{ CCI_REG8(0x319c), 0x01 },
++	{ CCI_REG8(0x3800), 0x01 },
++	{ CCI_REG8(0x3801), 0x01 },
++	{ CCI_REG8(0x3802), 0x02 },
++	{ CCI_REG8(0x3847), 0x03 },
++	{ CCI_REG8(0x38b0), 0x00 },
++	{ CCI_REG8(0x38b1), 0x64 },
++	{ CCI_REG8(0x38b2), 0x00 },
++	{ CCI_REG8(0x38b3), 0x64 },
++	{ CCI_REG8(0x38c4), 0x00 },
++	{ CCI_REG8(0x38c5), 0x64 },
++	{ CCI_REG8(0x4c3a), 0x02 },
++	{ CCI_REG8(0x4c3b), 0xd2 },
++	{ CCI_REG8(0x4c68), 0x04 },
++	{ CCI_REG8(0x4c69), 0x7e },
++	{ CCI_REG8(0x4cf8), 0x07 },
++	{ CCI_REG8(0x4cf9), 0x9e },
++	{ CCI_REG8(0x4db8), 0x08 },
++	{ CCI_REG8(0x4db9), 0x98 },
++	{ CCI_REG8(0x0202), 0x1a },
++	{ CCI_REG8(0x0203), 0x44 },
++	{ CCI_REG8(0x0224), 0x01 },
++	{ CCI_REG8(0x0225), 0xf4 },
++	{ CCI_REG8(0x313a), 0x01 },
++	{ CCI_REG8(0x313b), 0xf4 },
++	{ CCI_REG8(0x3803), 0x00 },
++	{ CCI_REG8(0x3804), 0x17 },
++	{ CCI_REG8(0x3805), 0xc0 },
++	{ CCI_REG8(0x0204), 0x00 },
++	{ CCI_REG8(0x0205), 0x00 },
++	{ CCI_REG8(0x020e), 0x01 },
++	{ CCI_REG8(0x020f), 0x00 },
++	{ CCI_REG8(0x0216), 0x00 },
++	{ CCI_REG8(0x0217), 0x00 },
++	{ CCI_REG8(0x0218), 0x01 },
++	{ CCI_REG8(0x0219), 0x00 },
++	{ CCI_REG8(0x313c), 0x00 },
++	{ CCI_REG8(0x313d), 0x00 },
++	{ CCI_REG8(0x313e), 0x01 },
++	{ CCI_REG8(0x313f), 0x00 },
++	{ CCI_REG8(0x0860), 0x01 },
++	{ CCI_REG8(0x0861), 0x2d },
++	{ CCI_REG8(0x0862), 0x01 },
++	{ CCI_REG8(0x0863), 0x2d },
++	{ CCI_REG8(0x30b4), 0x01 },
++	{ CCI_REG8(0x3066), 0x00 },
++	{ CCI_REG8(0x3067), 0x30 },
++	{ CCI_REG8(0x3068), 0x00 },
++	{ CCI_REG8(0x3069), 0x30 },
++};
++
++struct imx766_mode {
++	u32 width;
++	u32 height;
++	/* In pixel clocks (IMX766_PIXEL_RATE) and lines. */
++	u32 line_length;
++	u32 frame_length;
++	const struct cci_reg_sequence *regs;
++	unsigned int num_regs;
++};
++
++/* Both from the module's resolution table, same PLLs, 30.01 fps. */
++static const struct imx766_mode imx766_modes[] = {
++	{
++		.width = 4096,
++		.height = 3072,
++		.line_length = 15616,
++		.frame_length = 3824,
++		.regs = imx766_4096x3072_regs,
++		.num_regs = ARRAY_SIZE(imx766_4096x3072_regs),
++	},
++	{
++		.width = 2048,
++		.height = 1536,
++		.line_length = 8816,
++		.frame_length = 6772,
++		.regs = imx766_2048x1536_regs,
++		.num_regs = ARRAY_SIZE(imx766_2048x1536_regs),
++	},
++};
++
 +struct imx766 {
 +	struct device *dev;
 +	struct regmap *regmap;
@@ -994,6 +1122,8 @@ index 000000000..94d1c98c7
 +
 +	struct v4l2_ctrl_handler ctrls;
 +	struct v4l2_ctrl *exposure;
++	struct v4l2_ctrl *hblank;
++	struct v4l2_ctrl *vblank;
 +};
 +
 +static inline struct imx766 *to_imx766(struct v4l2_subdev *sd)
@@ -1001,13 +1131,24 @@ index 000000000..94d1c98c7
 +	return container_of(sd, struct imx766, sd);
 +}
 +
++static const struct imx766_mode *imx766_find_mode(u32 width, u32 height)
++{
++	return v4l2_find_nearest_size(imx766_modes, ARRAY_SIZE(imx766_modes),
++				      width, height, width, height);
++}
++
 +static int imx766_set_ctrl(struct v4l2_ctrl *ctrl)
 +{
 +	struct imx766 *s = container_of(ctrl->handler, struct imx766, ctrls);
++	const struct v4l2_mbus_framefmt *fmt;
++	struct v4l2_subdev_state *state;
 +	int ret = 0;
 +
++	state = v4l2_subdev_get_locked_active_state(&s->sd);
++	fmt = v4l2_subdev_state_get_format(state, 0);
++
 +	if (ctrl->id == V4L2_CID_VBLANK) {
-+		u32 max = IMX766_HEIGHT + ctrl->val - IMX766_EXPOSURE_MARGIN;
++		u32 max = fmt->height + ctrl->val - IMX766_EXPOSURE_MARGIN;
 +
 +		ret = __v4l2_ctrl_modify_range(s->exposure,
 +					       s->exposure->minimum, max,
@@ -1031,7 +1172,7 @@ index 000000000..94d1c98c7
 +		break;
 +	case V4L2_CID_VBLANK:
 +		cci_write(s->regmap, IMX766_REG_FRAME_LENGTH,
-+			  IMX766_HEIGHT + ctrl->val, &ret);
++			  fmt->height + ctrl->val, &ret);
 +		break;
 +	case V4L2_CID_TEST_PATTERN:
 +		cci_write(s->regmap, IMX766_REG_TEST_PATTERN, ctrl->val, &ret);
@@ -1055,9 +1196,10 @@ index 000000000..94d1c98c7
 +{
 +	struct v4l2_ctrl_handler *hdl = &s->ctrls;
 +	struct v4l2_fwnode_device_properties props;
++	const struct imx766_mode *mode = &imx766_modes[0];
 +	struct v4l2_ctrl *ctrl;
-+	u32 hblank = IMX766_LINE_LENGTH - IMX766_WIDTH;
-+	u32 vblank = IMX766_FRAME_LENGTH - IMX766_HEIGHT;
++	u32 hblank = mode->line_length - mode->width;
++	u32 vblank = mode->frame_length - mode->height;
 +	int ret;
 +
 +	ret = v4l2_fwnode_device_parse(s->dev, &props);
@@ -1074,17 +1216,19 @@ index 000000000..94d1c98c7
 +	v4l2_ctrl_new_std(hdl, NULL, V4L2_CID_PIXEL_RATE, IMX766_PIXEL_RATE,
 +			  IMX766_PIXEL_RATE, 1, IMX766_PIXEL_RATE);
 +
-+	ctrl = v4l2_ctrl_new_std(hdl, NULL, V4L2_CID_HBLANK, hblank, hblank, 1,
-+				 hblank);
-+	if (ctrl)
-+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
++	s->hblank = v4l2_ctrl_new_std(hdl, NULL, V4L2_CID_HBLANK, hblank,
++				      hblank, 1, hblank);
++	if (s->hblank)
++		s->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 +
-+	v4l2_ctrl_new_std(hdl, &imx766_ctrl_ops, V4L2_CID_VBLANK, vblank,
-+			  IMX766_FRAME_LENGTH_MAX - IMX766_HEIGHT, 1, vblank);
++	s->vblank = v4l2_ctrl_new_std(hdl, &imx766_ctrl_ops, V4L2_CID_VBLANK,
++				      vblank,
++				      IMX766_FRAME_LENGTH_MAX - mode->height,
++				      1, vblank);
 +
 +	s->exposure = v4l2_ctrl_new_std(hdl, &imx766_ctrl_ops,
 +					V4L2_CID_EXPOSURE, IMX766_EXPOSURE_MIN,
-+					IMX766_FRAME_LENGTH -
++					mode->frame_length -
 +					IMX766_EXPOSURE_MARGIN,
 +					1, IMX766_EXPOSURE_DEFAULT);
 +
@@ -1131,6 +1275,8 @@ index 000000000..94d1c98c7
 +				 u64 streams_mask)
 +{
 +	struct imx766 *s = to_imx766(sd);
++	const struct v4l2_mbus_framefmt *fmt = v4l2_subdev_state_get_format(state, 0);
++	const struct imx766_mode *mode = imx766_find_mode(fmt->width, fmt->height);
 +	int ret;
 +
 +	ret = pm_runtime_resume_and_get(s->dev);
@@ -1140,8 +1286,7 @@ index 000000000..94d1c98c7
 +	ret = cci_multi_reg_write(s->regmap, imx766_init_regs,
 +				  ARRAY_SIZE(imx766_init_regs), NULL);
 +	if (!ret)
-+		ret = cci_multi_reg_write(s->regmap, imx766_4096x3072_regs,
-+					  ARRAY_SIZE(imx766_4096x3072_regs),
++		ret = cci_multi_reg_write(s->regmap, mode->regs, mode->num_regs,
 +					  NULL);
 +	if (ret) {
 +		dev_err(s->dev, "failed to write registers: %d\n", ret);
@@ -1184,10 +1329,11 @@ index 000000000..94d1c98c7
 +	return ret;
 +}
 +
-+static void imx766_fill_format(struct v4l2_mbus_framefmt *fmt)
++static void imx766_fill_format(struct v4l2_mbus_framefmt *fmt,
++			       const struct imx766_mode *mode)
 +{
-+	fmt->width = IMX766_WIDTH;
-+	fmt->height = IMX766_HEIGHT;
++	fmt->width = mode->width;
++	fmt->height = mode->height;
 +	fmt->code = IMX766_MBUS_CODE;
 +	fmt->field = V4L2_FIELD_NONE;
 +	fmt->colorspace = V4L2_COLORSPACE_RAW;
@@ -1212,13 +1358,14 @@ index 000000000..94d1c98c7
 +				  struct v4l2_subdev_state *state,
 +				  struct v4l2_subdev_frame_size_enum *fse)
 +{
-+	if (fse->index || fse->code != IMX766_MBUS_CODE)
++	if (fse->index >= ARRAY_SIZE(imx766_modes) ||
++	    fse->code != IMX766_MBUS_CODE)
 +		return -EINVAL;
 +
-+	fse->min_width = IMX766_WIDTH;
-+	fse->max_width = IMX766_WIDTH;
-+	fse->min_height = IMX766_HEIGHT;
-+	fse->max_height = IMX766_HEIGHT;
++	fse->min_width = imx766_modes[fse->index].width;
++	fse->max_width = fse->min_width;
++	fse->min_height = imx766_modes[fse->index].height;
++	fse->max_height = fse->min_height;
 +
 +	return 0;
 +}
@@ -1227,10 +1374,33 @@ index 000000000..94d1c98c7
 +			     struct v4l2_subdev_state *state,
 +			     struct v4l2_subdev_format *fmt)
 +{
-+	imx766_fill_format(&fmt->format);
++	struct imx766 *s = to_imx766(sd);
++	const struct imx766_mode *mode;
++	int ret;
++
++	mode = imx766_find_mode(fmt->format.width, fmt->format.height);
++	imx766_fill_format(&fmt->format, mode);
 +	*v4l2_subdev_state_get_format(state, 0) = fmt->format;
 +
-+	return 0;
++	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
++		return 0;
++
++	/* The new mode's blanking and exposure limits. */
++	ret = __v4l2_ctrl_modify_range(s->hblank,
++				       mode->line_length - mode->width,
++				       mode->line_length - mode->width, 1,
++				       mode->line_length - mode->width);
++	if (ret)
++		return ret;
++
++	ret = __v4l2_ctrl_modify_range(s->vblank,
++				       mode->frame_length - mode->height,
++				       IMX766_FRAME_LENGTH_MAX - mode->height, 1,
++				       mode->frame_length - mode->height);
++	if (ret)
++		return ret;
++
++	return __v4l2_ctrl_s_ctrl(s->vblank, mode->frame_length - mode->height);
 +}
 +
 +static int imx766_get_selection(struct v4l2_subdev *sd,
@@ -1242,7 +1412,7 @@ index 000000000..94d1c98c7
 +	case V4L2_SEL_TGT_CROP_DEFAULT:
 +	case V4L2_SEL_TGT_CROP_BOUNDS:
 +	case V4L2_SEL_TGT_NATIVE_SIZE:
-+		/* The mode reads the whole array and bins it 2x2. */
++		/* Both modes read the whole array and bin it. */
 +		sel->r.left = 0;
 +		sel->r.top = 0;
 +		sel->r.width = IMX766_NATIVE_WIDTH;
@@ -1256,7 +1426,8 @@ index 000000000..94d1c98c7
 +static int imx766_init_state(struct v4l2_subdev *sd,
 +			     struct v4l2_subdev_state *state)
 +{
-+	imx766_fill_format(v4l2_subdev_state_get_format(state, 0));
++	imx766_fill_format(v4l2_subdev_state_get_format(state, 0),
++			   &imx766_modes[0]);
 +
 +	return 0;
 +}

@@ -53,7 +53,15 @@ for pkg in $PACKAGES; do
 	echo "    synced $pkg"
 done
 
-git -C "$PMAPORTS" add -A device/testing
+for pkg in $TEMP_PACKAGES; do
+	src="$REPO/pmaports/temp/$pkg"
+	[ -d "$src" ] || die "missing $src"
+	refresh_checksums "$src"
+	rsync -a --delete "$src/" "$PMAPORTS/temp/$pkg/"
+	echo "    synced temp/$pkg"
+done
+
+git -C "$PMAPORTS" add -A device/testing temp
 if ! git -C "$PMAPORTS" diff --cached --quiet; then
 	git -C "$PMAPORTS" -c user.name=cupid-linux -c user.email=cupid-linux@localhost \
 		commit -q -m "cupid: sync packages from cupid-linux" >/dev/null

@@ -31,7 +31,7 @@
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=7
+pkgrel=8
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -91,6 +91,7 @@ source="
 	0034-asoc-qcom-q6dsp-advertise-96-khz-tdm-playback.patch
 	0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
 	0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
+	0037-media-i2c-ov13b10-report-the-crop-rectangles.patch
 "
 builddir="$srcdir/linux-$pkgver"
 
@@ -160,9 +161,10 @@ ef2d5ed97a165eb488e503de9d59225956cd183f9a184bf26073dfbb13db8c08eeb03f45c20748b8
 8bbeb445afbcd781ec6b9b27f41f04dee1fe54dbec310d504a79c7219ba8c35ab155c4cfb6abafe73e2aacac997f0479adbb401f9e7416385f93b7c2d2b7507a  0029-media-i2c-add-a-samsung-s5k5e9-driver.patch
 5e28789da35ee3032bbf551c21943abe34dfc7d7fb4df8d81f0e20e3bef39a1a4f7cd35b8756f3931041f28a9acd849a65b9dc391fb932bfe522e0f114d8ed37  0030-media-qcom-camss-c-phy-support-backport.patch
 2e46d1f1ca4dd679aaf393c438f0693bbe205e4f8ec869d6b28ee3ff5594be760232127c9256a48e5bfa855415f8bb68e76c32baca9a9af83805a67c83adc23c  0031-media-qcom-camss-c-phy-on-sm8450.patch
-39e01530b4544e7c377363c658aba82be30c5140aca890fd73632b9c173661c98ec0433c231a070c0652ef8966f024e877543c61cbf3ea8f31007540717d2422  0032-media-i2c-add-a-sony-imx766-driver.patch
+88cdec67b6fe26cf66588e55b5bfaa99c6409fd01134cf2f90eef31b75d88d2fde0ad962f6981f12c7fcea9ef3f445368598e361f3061e78aa7b956414983e29  0032-media-i2c-add-a-sony-imx766-driver.patch
 99faf19411816309304e52eb59e5a8c00584615d25a2da8c359251f2c5a960ac0141162c8006f9c87dbd225ece2aad0eaccd806126f59efbefc6619b667c4d2a  0033-asoc-qcom-audioreach-legacy-tdm-modules.patch
 3fb70150a762cec876fad66e3863ef75d1509f43b231c0e4913af547127448c5b61db008c77c4ade48fac3879fa78970ed9c7ba9b5a1ad2c628d831ac0e0db38  0034-asoc-qcom-q6dsp-advertise-96-khz-tdm-playback.patch
 8c8338aa1f847ad6d51ecfa6472ea177062c2719d3518cdc3665fafa32c440bb8f0e915c7de0f33eba0e130f40c6fc8a754c70150e35c50ec75a27cf35817dda  0035-asoc-qcom-common-tdm-codec-slot-via-channel-map.patch
 69a437fb63792d8d2baef74a4a7b394fadaa767c8cef74dc0b52c4b831d88aa100e26c504046acd14fd3a1bcd899cf731a6db1bbd45008dc7b63017b554759a1  0036-asoc-qcom-sc8280xp-xiaomi-12-speaker-tdm-card.patch
+c223479cdb1e825b9fe8847a5f1dd37d7a851091bea61df5047d3aaa0fa97fd9eed3401af1253a94383b6b436067310676b52ebd56bf163c9f2eac4cbce9cd95  0037-media-i2c-ov13b10-report-the-crop-rectangles.patch
 "

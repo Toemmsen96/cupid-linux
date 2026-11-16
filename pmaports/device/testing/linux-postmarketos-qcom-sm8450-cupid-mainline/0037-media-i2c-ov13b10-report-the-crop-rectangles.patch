@@ -1,0 +1,82 @@
+From 15305b630e80758c5dbf4b31f9e4a06aa9823d77 Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 17:33:51 +0100
+Subject: [PATCH] media: i2c: ov13b10: report the crop rectangles
+
+libcamera needs the pixel array size and the active crop of a sensor
+("The sensor kernel driver needs to be fixed"). Report the 4208x3120
+array as native size, crop bounds and default crop, and as the active
+crop of the binned modes (2104x1560 and smaller), which read the whole
+array; the full size modes read a window of their own size around the
+centre.
+
+Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+---
+ drivers/media/i2c/ov13b10.c | 47 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 47 insertions(+)
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index 26033a769..2574c851f 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -1056,6 +1056,52 @@ static int ov13b10_enum_mbus_code(struct v4l2_subdev *sd,
+ 	return 0;
+ }
+ 
++#define OV13B10_NATIVE_WIDTH		4208
++#define OV13B10_NATIVE_HEIGHT		3120
++
++/*
++ * The binned modes (2104x1560 and smaller) read the whole array, the full
++ * size modes a window of their own size around the centre.
++ */
++static void ov13b10_mode_crop(const struct ov13b10_mode *mode,
++			      struct v4l2_rect *r)
++{
++	if (mode->width <= OV13B10_NATIVE_WIDTH / 2) {
++		r->width = OV13B10_NATIVE_WIDTH;
++		r->height = OV13B10_NATIVE_HEIGHT;
++	} else {
++		r->width = mode->width;
++		r->height = mode->height;
++	}
++	r->left = (OV13B10_NATIVE_WIDTH - r->width) / 2;
++	r->top = (OV13B10_NATIVE_HEIGHT - r->height) / 2;
++}
++
++static int ov13b10_get_selection(struct v4l2_subdev *sd,
++				 struct v4l2_subdev_state *sd_state,
++				 struct v4l2_subdev_selection *sel)
++{
++	struct ov13b10 *ov13b = to_ov13b10(sd);
++
++	switch (sel->target) {
++	case V4L2_SEL_TGT_CROP:
++		mutex_lock(&ov13b->mutex);
++		ov13b10_mode_crop(ov13b->cur_mode, &sel->r);
++		mutex_unlock(&ov13b->mutex);
++		return 0;
++	case V4L2_SEL_TGT_CROP_DEFAULT:
++	case V4L2_SEL_TGT_CROP_BOUNDS:
++	case V4L2_SEL_TGT_NATIVE_SIZE:
++		sel->r.left = 0;
++		sel->r.top = 0;
++		sel->r.width = OV13B10_NATIVE_WIDTH;
++		sel->r.height = OV13B10_NATIVE_HEIGHT;
++		return 0;
++	}
++
++	return -EINVAL;
++}
++
+ static int ov13b10_enum_frame_size(struct v4l2_subdev *sd,
+ 				   struct v4l2_subdev_state *sd_state,
+ 				   struct v4l2_subdev_frame_size_enum *fse)
+@@ -1343,6 +1389,7 @@ static const struct v4l2_subdev_pad_ops ov13b10_pad_ops = {
+ 	.get_fmt = ov13b10_get_pad_format,
+ 	.set_fmt = ov13b10_set_pad_format,
+ 	.enum_frame_size = ov13b10_enum_frame_size,
++	.get_selection = ov13b10_get_selection,
+ };
+ 
+ static const struct v4l2_subdev_ops ov13b10_subdev_ops = {

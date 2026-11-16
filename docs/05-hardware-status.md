@@ -19,7 +19,7 @@ fix that is in this repository but not yet booted.
 | Screen | broken | should work | works, glitches | panel `l3_42_02_0a` (matches the bootloader's `msm_drm.dsi_display0`). Black during boot until the first power press (fixed in stable 0021 / next 0011, verified on 6.17 2026-11-16: the bootloader leaves the panel rails on, and after only a reset pulse the panel never leaves sleep, no TE on GPIO 86; one rail power cycle before the first init gives boot text and the greeter). 60 Hz flickered (OLED PWM): 0014 runs it at 120 Hz like stock, verified. Sporadic corruption on interaction (noise bands, shifted/duplicated content) at 60 and 120 Hz while phosh's own screenshot is clean. Not the DSI clock (0 DCS commands / 0 clock changes while glitching; 0015 is kept as a correct upstream fix). Measured on GPIO 86 via /dev/mem at 1 MHz: TE is a 50 % square wave toggling once per frame (rising edges 29.3 Hz, 34.39 ms; frame 17.2 ms = 58.2 Hz in 60 Hz mode). The DPU syncs on rising edges only, so it sees every other frame and free-runs (and assumes 60.0 Hz) in between; transfers then collide with scan-out of the compressed GRAM. At 120 Hz TE is a clean pulse (116.7 Hz); the 60 Hz square wave came from a missing stock timing-switch tail. Stock analysis: the DPU tear check self-triggers after 2*vtotal lines (only ~41 us margin at 120 Hz, every frame at 60 Hz; stock uses 0xfff0), and stock drives the panel with 10 bpc DSC (we sent an 8 bpc PPS). Tried on pkgrel 6 and reverted: tear check sync_cfg_height = 0xfff0 like stock (mainline then never starts a frame: "ctl start interrupt wait failed", confirmed by writing INTF1 TEAR_SYNC_CONFIG_HEIGHT back at runtime) and 10 bpc DSC like stock (static noise on 6.13's DSI host). 0018 keeps only the stock timing-switch tails (TE 116.7 -> 121.7 Hz at 120 Hz); glitches still open |
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
-| Audio | broken | partial | card probes | headphone/codec-DMA path and USB-C audio; internal speakers (CS35L41 on tertiary TDM) do not work: the DSP never propagates a media format to the TDM sink, an audioreach gap |
+| Audio | broken | partial | headphones, USB-C audio; speakers on 7.3 | headphone/codec-DMA path and USB-C audio. Internal speakers (two CS35L41 on tertiary TDM) play on the 7.3 kernel (pkgrel 7, device pkgrel 8), both channels verified 2026-11-16, see [Speakers](#speakers-73); 6.13/6.17 lack the legacy AudioReach TDM endpoint |
 | Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | raw capture works (6.17, 7.3) | the 6.13 tree has no SM8450 CAMSS. On the 6.17 kernel (`next`) the OV13B10 ultra-wide streams 4208x3120 RAW10 through CSIPHY0/CSID0/VFE0 (test pattern and real image verified 2026-11-16). On 7.3 (`mainline`, pkgrel 3) the OV32B40 front camera also streams 3264x2448 RAW10 through CSIPHY3/CSID1/VFE1 (real image verified 2026-11-16), and the S5K5E9 telemacro 2592x1944 RAW10 through CSIPHY1 (pkgrel 4, colour bars and real image 2026-11-16), and the IMX766 main camera 4096x3072 RAW10 over three C-PHY trios into CSIPHY2 (pkgrel 5, C-PHY backport plus an SM8450 sequence, colour bars and real image 2026-11-16), see [Cameras](#cameras). Raw frames only: no ISP, autofocus or OIS |
 | Camera flash | works | works | | `pm8350c_flash` |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
@@ -42,7 +42,7 @@ First booted 2026-11-16 (kernel 7.3.4), installed over the 6.17 rootfs with
 
 | Works | Not yet re-checked |
 |---|---|
-| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe), front, macro and main camera streaming (OV32B40 pkgrel 3, S5K5E9 pkgrel 4, IMX766 pkgrel 5) | mobile data, audio output, sensors, ultra-wide streaming, the battery current sign (reads negative while charging) |
+| boot with text, greeter, display at 120 Hz **without the sporadic corruption** (gone on 7.3), touch, battery, WiFi (pkgrel 2), Bluetooth, modem (ModemManager), IPA, sound card, DSPs, camera stack (CAMSS, CCI, PM8008, OV13B10 probe), front, macro and main camera streaming (OV32B40 pkgrel 3, S5K5E9 pkgrel 4, IMX766 pkgrel 5), speakers (pkgrel 7) | mobile data, audio output, sensors, ultra-wide streaming, the battery current sign (reads negative while charging) |
 
 WiFi needed an upstream fix (0027): the qcom PCIe driver read `iommu-map`
 as 4-cell entries while sm8450.dtsi uses 5 (`#iommu-cells = <2>`), so the
@@ -102,6 +102,41 @@ Left to try:
 - runtime experiments on INTF1 tear-check registers (base 0xae36000, only
   with the display on) to test start position / threshold changes without a
   rebuild.
+
+## Speakers (7.3)
+
+Two CS35L41 amplifiers on the tertiary TDM interface: top at 0x42 (slot 0,
+"SpkrLeft"), bottom at 0x40 (slot 1, "SpkrRight"). The SM8450 ADSP firmware
+has the legacy AudioReach TDM endpoint (`MODULE_ID_TDM_SINK` 0x0700100E,
+found in its module table) but not the Audio IF module 7.3 supports, so the
+mainline kernel carries:
+
+- 0033 legacy TDM sink/source configured from the topology (Tatsuki
+  Tanaka, from dianqk's Poco F5 "marble" port, which has the same stack);
+- 0034 96 kHz TDM playback;
+- 0035 the slot of codecs without `set_tdm_slot` (CS35L41) through the
+  channel map;
+- 0036 a `xiaomi,cupid-sndcard` card: backend fixed to 96 kHz S32 stereo
+  (stock: 4 x 32-bit slots, short sync, one-bit delay, SoC clock
+  provider), DSP A to the amplifiers, the bit clock as their PLL reference
+  (12.288 MHz), and the LPASS MACRO/DCODEC votes and the TDM bit clock held
+  by the card while the backend runs.
+
+The device package builds `qcom/sm8450/Xiaomi-12-tplg.bin` from
+`Xiaomi-12.m4`: the SM8450-HDK topology (linux-msm/audioreach-topology,
+which builds byte-identical to linux-firmware's HDK file) with the WSA
+speaker device replaced by an MFC -> TDM sink device subgraph. UCM: device
+"Speaker" on MultiMedia2 (`hw:0,1`); it routes MultiMedia2 to the TDM
+mixer, sets both amplifiers' PCM Source to ASP (their DSP needs firmware
+that is not loaded) and holds their analogue gain at 0.5 dB. There is no
+speaker protection: keep the volume moderate.
+
+By hand (PipeWire stopped):
+
+```sh
+alsaucm -c hw:0 set _verb HiFi set _enadev Speaker
+speaker-test -D hw:0,1 -c 2 -r 48000 -F S16_LE -t sine -l 1
+```
 
 ## Cameras
 
@@ -256,6 +291,23 @@ v4l2-ctl -d /dev/video0 --stream-mmap=4 --stream-count=3 --stream-to=/tmp/main.r
 
 5120 bytes per line. Analogue gain is Sony's 16384 / (16384 - code), up to
 16128 (64x); exposure is in lines of 8.7 us.
+
+### Cameras in apps (libcamera)
+
+libcamera's simple pipeline with the software ISP (GPU debayer) lists all
+four cameras, and PipeWire/WirePlumber and Snapshot pick them up. The
+software ISP crops, it does not scale, so previews need binned sensor
+modes: the IMX766 driver has 2048x1536 next to 4096x3072 (30 fps either
+way; full resolution only reaches ~12 fps after processing), the OV13B10
+driver's own 2104x1560 runs at 60 fps. OV13B10 patch 0037 reports the crop
+rectangles libcamera requires.
+
+libcamera has no sensor helpers for these sensors, so auto exposure treats
+the gain codes as linear and images stay dark. `pmaports/temp/libcamera`
+(postmarketOS' libcamera 0.8.0 plus 0003) adds helpers (gain model, black
+level) and sensor properties for all four; `scripts/sync.sh` puts it over
+the pmaports one. Colour tuning (CCM), autofocus (VCM drivers) and OIS are
+not done.
 
 ## Kernel patches carried
 
