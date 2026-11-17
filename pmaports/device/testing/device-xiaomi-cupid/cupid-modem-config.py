@@ -9,9 +9,12 @@ carrier configuration is active and the modem's IMS stack never starts. On
 LTE-only networks that means no voice: outgoing calls hang in "dialing" and
 incoming calls go to voicemail. SMS works regardless.
 
-This loads the configuration for the SIM's operator into the modem if it is
-missing, then selects and activates it (the modem restarts once). It does
-nothing when the right configuration is already active.
+This picks the configuration for the inserted SIM the way the modem's own
+automatic selection does: from the network codes (MCC/MNC) and SIM card
+number prefixes (IIN) each configuration lists in its trailer. It loads it
+into the modem if it is missing, then selects and activates it (the modem
+restarts once). It does nothing when the right configuration is already
+active.
 
 "stop" (run at shutdown) deactivates it again: with a VoLTE configuration
 already active at power-on, the modem's start-up stalls ("DOG detects
@@ -21,18 +24,15 @@ up, it works. A boot after an unclean shutdown goes through those resets
 and then gets the configuration activated here as usual.
 
 /etc/cupid-modem-config can override the choice: a path relative to
-modem_pr/mcfg/configs/mcfg_sw/generic (e.g. EU/<carrier>/Commercial/Swiss),
+modem_pr/mcfg/configs/mcfg_sw/generic (e.g. EU/Vodafone/VoLTE/Germany),
 or "none" to leave the modem alone.
 """
 import hashlib, os, select, socket, struct, subprocess, sys, time
 
 BASE = "/lib/firmware/qcom/sm8450/cupid/modem_pr/mcfg/configs/mcfg_sw/generic"
-# SIM operator code (MCC MNC) -> configuration. Brands on these networks
-# (e.g. <brand> on <carrier>) share the network's code.
-BY_OPERATOR = {
-    "<mcc-mnc>": "EU/<carrier>/Commercial/Swiss",
-    "<mcc-mnc>": "EU/<carrier>/VoLTE/<carrier>",
-}
+# Configurations for test networks or without IMS, never picked
+# automatically.
+SKIP = ("/Lab", "/Test", "Non_VoLTE", "IMSless", "CDMAless")
 # The modem keeps configurations under their SHA-1 from its own loading
 # pass and refuses a second load under that ID, so ours get a suffix.
 ID_SUFFIX = b"-cupid"
@@ -47,17 +47,57 @@ def log(msg):
     print(msg, flush=True)
 
 
-def operator_code(timeout=480):
+def sim_codes(timeout=480):
+    """(operator code, ICCID) of the SIM, once ModemManager knows them."""
     end = time.time() + timeout
     while time.time() < end:
         out = subprocess.run(["mmcli", "-i", "any", "-K"], capture_output=True, text=True).stdout
+        props = {}
         for line in out.splitlines():
-            if line.startswith("sim.properties.operator-code"):
-                code = line.split(":", 1)[1].strip()
-                if code and code != "--":
-                    return code
+            key, _, value = line.partition(":")
+            props[key.strip()] = value.strip()
+        code = props.get("sim.properties.operator-code", "--")
+        if code and code != "--":
+            iccid = props.get("sim.properties.iccid", "--")
+            return code, iccid if iccid != "--" else ""
         time.sleep(5)
-    return None
+    return None, None
+
+
+def trailer(path):
+    """MCFG trailer of a configuration: ([(mcc, mnc)], [iin])."""
+    with open(path, "rb") as f:
+        d = f.read()
+    i = d.rfind(b"MCFG_TRL")
+    if i < 0:
+        return [], []
+    p, tlv = i + 13, {}
+    while p + 3 <= len(d):
+        t, n = struct.unpack_from("<BH", d, p)
+        tlv[t] = d[p + 3:p + 3 + n]
+        p += 3 + n
+    def entries(v, fmt):
+        if len(v) < 2:
+            return []
+        size = struct.calcsize(fmt)
+        return [struct.unpack_from(fmt, v, 2 + size * k) for k in range(v[1])
+                if 2 + size * (k + 1) <= len(v)]
+    return entries(tlv.get(6, b""), "<HH"), [x[0] for x in entries(tlv.get(4, b""), "<I")]
+
+
+def pick(code, iccid):
+    """The configuration for a SIM, relative to BASE, or None."""
+    mcc, mnc = int(code[:3]), int(code[3:])
+    found = []
+    for root, _dirs, files in os.walk(BASE):
+        rel = os.path.relpath(root, BASE)
+        if "mcfg_sw.mbn" not in files or any(s in "/" + rel for s in SKIP):
+            continue
+        codes, iins = trailer(os.path.join(root, "mcfg_sw.mbn"))
+        if (mcc, mnc) in codes:
+            iin_match = any(iccid.startswith(str(x)) for x in iins)
+            found.append((not iin_match, "VoLTE" not in rel, "Commercial" not in rel, rel))
+    return min(found)[3] if found else None
 
 
 class Pdc:
@@ -169,13 +209,13 @@ def main():
         log("disabled in /etc/cupid-modem-config")
         return 0
     if not choice:
-        code = operator_code()
+        code, iccid = sim_codes()
         if not code:
             log("no SIM operator code, nothing to do")
             return 0
-        choice = BY_OPERATOR.get(code)
+        choice = pick(code, iccid)
         if not choice:
-            log("no carrier configuration known for operator %s" % code)
+            log("no carrier configuration lists network %s" % code)
             return 0
     path = os.path.join(BASE, choice, "mcfg_sw.mbn")
     data = open(path, "rb").read()

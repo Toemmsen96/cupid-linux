@@ -1,7 +1,7 @@
 #!/bin/sh
 # Fill the private overlay local/rootfs/ for scripts/inject-local.sh.
 #
-#   scripts/local-pull.sh HOST     e.g. user@phone or user@172.16.42.1
+#   scripts/local-pull.sh [HOST]   user@address, default $CUPID_PHONE (cupid.env)
 #
 # Copies from a running phone (needs sudo there):
 #   - the NetworkManager connections (WiFi passwords included) as system
@@ -13,7 +13,7 @@
 set -e
 . "$(dirname "$0")/env.sh"
 
-host="$1"
+host="${1:-$CUPID_PHONE}"
 [ -n "$host" ] || die "usage: $0 user@phone"
 user="$(pmb config user 2>/dev/null || true)"
 [ -n "$user" ] || user="${host%@*}"

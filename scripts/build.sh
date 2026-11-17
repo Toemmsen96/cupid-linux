@@ -6,8 +6,8 @@
 #   scripts/build.sh image        skip the explicit package build, just install
 #   scripts/build.sh kconfig      run pmbootstrap's kconfig check on the kernel
 #
-# Environment: see scripts/env.sh. CUPID_PASSWORD sets the user password in the
-# image (default <password>, change it with passwd after the first login).
+# Environment: see scripts/env.sh. CUPID_PASSWORD (cupid.env) sets the user
+# password in the image; without it pmbootstrap asks for one.
 # If local/rootfs/ exists (scripts/local-pull.sh), its files go into the image:
 # WiFi, passwordless sudo and SSH host keys for testing. CUPID_NO_LOCAL=1
 # skips that.
@@ -72,7 +72,11 @@ echo "==> installing image"
 # --single-partition: boot and root in one filesystem, flashed to userdata as
 # is. That is what the initramfs expects on a fastboot device, and it avoids
 # the nested partition table the combined image would otherwise carry.
-pmb install --single-partition --password "${CUPID_PASSWORD:-<password>}"
+if [ -n "$CUPID_PASSWORD" ]; then
+	pmb install --single-partition --password "$CUPID_PASSWORD"
+else
+	pmb install --single-partition
+fi
 
 echo "==> exporting to $OUT"
 mkdir -p "$OUT"

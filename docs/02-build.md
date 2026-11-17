@@ -38,7 +38,7 @@ Useful variants:
 | `CUPID_KERNEL=mainline scripts/build.sh` | the Linux 7.3 kernel (what the phone runs now) |
 | `CUPID_KERNEL=next scripts/build.sh` | the 6.17 fork kernel |
 | `scripts/pmb build --arch aarch64 libcamera` | rebuild one overlay package (`--arch` matters for "arch all" packages) |
-| `CUPID_PASSWORD=secret scripts/build.sh` | user password in the image (default `<password>`) |
+| `CUPID_PASSWORD=secret scripts/build.sh` | user password in the image (else pmbootstrap asks; can live in `cupid.env`) |
 
 The kernel variant and UI are stored in the config, so `scripts/pmb config
 kernel next` and `scripts/pmb config ui phosh` work as well.
@@ -77,7 +77,7 @@ asks for the password, and the SSH host key changes. For test builds keep
 those in a private overlay:
 
 ```sh
-scripts/local-pull.sh user@phone   # from a running phone, once
+scripts/local-pull.sh                    # from the running phone ($CUPID_PHONE), once
 scripts/build.sh                          # injects local/rootfs/ into the image
 ```
 

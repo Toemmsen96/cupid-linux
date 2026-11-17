@@ -44,8 +44,8 @@ the single-partition install, then `scripts/pmb flasher flash_rootfs
 ## First boot
 
 - About 30 s after the reboot the phone shows up as a USB network device.
-  `ssh <user>@172.16.42.1` (user and password from `scripts/pmb config`,
-  default password `<password>`). The first boot takes a couple of minutes while
+  `ssh <user>@172.16.42.1` (user from `scripts/pmb config`, password
+  the one given at `scripts/build.sh`: `CUPID_PASSWORD` or the prompt). The first boot takes a couple of minutes while
   the filesystem is resized and the user is created.
 - A black screen with SSH working is the first milestone. Then look at
   `dmesg` for the panel (`panel-l3-42-02-0a-dsc`), touch (`fts`), WiFi

@@ -6,7 +6,7 @@
 #
 # Environment:
 #   CUPID_ARCH_SIZE      image size (default 6G)
-#   CUPID_PASSWORD       user password (default <password>)
+#   CUPID_PASSWORD       user password (required; cupid.env)
 #   CUPID_ARCH_USER      user name (default: the pmbootstrap user)
 #
 # Needs: bsdtar (libarchive), mkfs.ext4 with -d (e2fsprogs >= 1.43), tar,
@@ -29,7 +29,8 @@ boot="$OUT/boot.img"
 [ -d "$PKGREPO" ] || die "$PKGREPO missing: run scripts/build.sh first"
 
 user="${CUPID_ARCH_USER:-$(pmb config user 2>/dev/null || echo user)}"
-password="${CUPID_PASSWORD:-<password>}"
+password="$CUPID_PASSWORD"
+[ -n "$password" ] || die "set CUPID_PASSWORD (cupid.env)"
 
 # --- root UUID from the boot image cmdline ------------------------------------
 # The pmOS initramfs mounts the root by this UUID and will not fall back to

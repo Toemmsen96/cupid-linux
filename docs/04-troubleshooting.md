@@ -131,9 +131,9 @@ ModemManager are then the next steps.
 - Calls stay in "dialing" or incoming calls go to voicemail: no carrier
   configuration is active, so the modem has no VoLTE.
   `journalctl -u cupid-modem-config` shows what the service did; it needs
-  the SIM to be known to ModemManager (operator codes it knows: <mcc-mnc>
-  <carrier>, <mcc-mnc> <carrier> and brands on it). Other networks: put the MBN
-  path below `modem_pr/mcfg/configs/mcfg_sw/generic` (e.g.
+  the SIM to be known to ModemManager, and picks the configuration whose
+  trailer lists the SIM's network code (and card number prefix). To force
+  one, or when none matches: put the MBN path below `modem_pr/mcfg/configs/mcfg_sw/generic` (e.g.
   `EU/Vodafone/...`) into `/etc/cupid-modem-config`, then
   `systemctl restart cupid-modem-config`.
 - Modem keeps crashing at boot (`DOG detects stalled initialization` in

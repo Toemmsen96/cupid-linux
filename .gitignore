@@ -9,3 +9,9 @@
 /arch/cache/
 # scripts/local-pull.sh output: WiFi passwords, SSH host keys, sudo rule. Private.
 /local/
+# personal settings (phone address, password, test number): cupid.env.example
+/cupid.env
+# scratch file with a plaintext password
+/cmd
+# python bytecode
+__pycache__/

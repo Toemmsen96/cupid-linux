@@ -11,8 +11,16 @@
 #   CUPID_KERNEL     kernel variant: stable (6.13), next (6.17, fork) or
 #                    mainline (7.3 from kernel.org)
 #   CUPID_PASSWORD   password for the user account in the image
+#   CUPID_PHONE      SSH target of the running phone (user@address)
+#   CUPID_TEST_NUMBER  phone number for SMS/call tests
+#
+# Personal settings (CUPID_PHONE, CUPID_PASSWORD, CUPID_TEST_NUMBER, ...) go
+# in cupid.env at the top of the repository: gitignored, read here. See
+# cupid.env.example.
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+[ -f "$REPO/cupid.env" ] && . "$REPO/cupid.env"
 WORK="${CUPID_PMB_WORK:-$HOME/.local/var/pmbootstrap-cupid}"
 PMAPORTS="${CUPID_PMAPORTS:-$REPO/work/pmaports}"
 CFG="$REPO/work/pmbootstrap.cfg"

@@ -8,13 +8,14 @@
 # pmaports/temp. -i installs the built packages afterwards (a kernel
 # package flashes the boot partition on installation; reboot to use it).
 #
-# Phone: CUPID_PHONE (default user@phone). One-time setup there:
+# Phone: CUPID_PHONE (user@address, from cupid.env). One-time setup there:
 #   sudo apk add abuild alpine-sdk && sudo addgroup $USER abuild
 #   abuild-keygen -a -n && sudo cp ~/.config/abuild/*.rsa.pub /etc/apk/keys/
 # The phone fetches sources and makedepends itself: keep it on Wi-Fi.
 set -e
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PHONE="${CUPID_PHONE:-user@phone}"
+. "$(dirname "$0")/env.sh"
+PHONE="$CUPID_PHONE"
+[ -n "$PHONE" ] || die "set CUPID_PHONE (user@address) in cupid.env"
 install=
 [ "$1" = "-i" ] && { install=1; shift; }
 [ $# -gt 0 ] || { sed -n 2,14p "$0"; exit 2; }
