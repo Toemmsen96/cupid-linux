@@ -148,15 +148,17 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   sensors PDs). Without it (`no-ecns`) RX and TX open, take their VCPM
   calibration (`fit`), prepare and start with status 0 together with the
   running backends.
-- Audio PD (prepared, untested): mainline fastrpc creates it with
+- Audio PD (works, 2026-11-17): mainline fastrpc creates it with
   `FASTRPC_IOCTL_INIT_CREATE_STATIC` "audiopd" and hands the ADSP a remote
   heap from the fastrpc node's `memory-region` (8 MiB pool, `qcom,vmids`
   LPASS + ADSP_HEAP, as on kodiak/sm8250); the cupid DTS adds it (kernel
   r18). `pmaports/temp/hexagonrpcd` (0.4.0-r100) adds `hexagonrpcd -a`,
   which creates the PD and serves its file requests, and the unit
-  `hexagonrpcd-adsp-audiopd.service` (not enabled by default). Test without
-  a call: the stock TX processing subgraph (`build` without `no-ecns`)
-  should then open.
+  `hexagonrpcd-adsp-audiopd.service` (enabled by the device package's
+  preset from r22). With it running, the stock voice graphs including ECNS
+  (`build` without `no-ecns`) open, take their calibration and start with
+  status 0; the 0x3e table with ECNS is 4020 bytes, just inside the GPR
+  limit with `fit`.
 - The modem does start the vocoder: during a call (already while it
   rings) `voicecall.py keys` shows vocoder class EVS (0x0800116A) at
   32 kHz on 0x40, 0x3f and 0x3e. Modem and ADSP talk to each other
@@ -167,10 +169,10 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   and the far end heard at most "something very quiet" of the beeps. The
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
-- Next: a call with the 32 kHz tables (`fit`, now the default rate) and
-  louder beeps; then full-size calibration (blocking `rpmsg_send` for
-  large packets, or shared memory as GSL does), the audio PD for ECNS, and
-  the kernel voice front end.
+- Next: a call with the stock graphs (ECNS included) and the 32 kHz tables
+  (`fit`, now the default rate) and louder beeps; then full-size
+  calibration (blocking `rpmsg_send` for large packets, or shared memory as
+  GSL does) and the kernel voice front end.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
   (`/org/freedesktop/ModemManager1/Call/N`, the short form crashes mmcli).

@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=21
+pkgrel=22
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -176,7 +176,9 @@ openrc() {
 
 systemd() {
 	install_if="$pkgname=$pkgver-r$pkgrel systemd"
-	depends="hexagonrpcd-systemd python3"
+	# hexagonrpcd r100 (pmaports/temp) has the ADSP audio PD unit, which
+	# loads the voice ECNS module; enabled by the preset.
+	depends="hexagonrpcd-systemd>=0.4.0-r100 python3"
 
 	# Copies this unit's sensor calibration from persist before
 	# hexagonrpcd-sdsp starts; both enabled by the preset.
@@ -211,7 +213,7 @@ c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f
 789c3be3bc9c288fde49a6568e7175759ab068bb73fac134c76b755dacdc9e0540ee03a504586d0c661094e5344a3c220bd6f5c6143da8ecf45a32fb3f146409  cupid-sensor-registry.service
 8d572bf4aecd868c7587f4d8196ccfe2d06d1a0fedc57422be2bd3d2bc1ef2688be7d5a2f6ebeddfa900ca2cb2707e5ce626d7e1e0ef47a973dd3a26cb3223b9  cupid-modem-config.py
 9b7587619d5711041e6ceed0440c2ec7d0e8bfbb24ce5ea55ea609388e7727db26ac219d185405089ac6b288c7dbba2c0c2f708851a548de7e6de96cc2e2e1d9  cupid-modem-config.service
-60de69204fa30e17ce48362fb4afcde3f97262f33880f26d56c400c817e2fd27a64c3ee8539c461cd9242bbabdca395fb35af3cc35647b66cd29ccd1ee21e82b  90-device-xiaomi-cupid.preset
+949ef197d019d6705bc8d7667f083580b6a342c4006f412bbda03c7682bf87bf3509356b3b75fa34e333f24bf66c98101339041a973d4f40d653bf8c3998ec01  90-device-xiaomi-cupid.preset
 2f47bcd412f51054f38642c458ca6811de5096630305335ac82c70dbd742ba4a6034154054d042f834250651618823e875f8f70f7fe027ed3dc90b626fe49270  81-libssc-xiaomi-cupid.rules
 6c33f96ca1b9a127758bf8f9ff2df087c015bfae1f8503ec2d2601f952ce957eb9642cfbfc0df80db3fda8cd445537f80e3f903c2c681f4e5abdd3d8fb2a73d6  audioreach-topology-d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037.tar.gz
 05e8be885bd4e1d25c26d8cc5e59f1804e6a5897209fb86cc47c0c9a8433d7b6450a7d6b2e8bf7c06c8d20408a03a6dfbaaa9c9a5d2af99bffe5345d03c22416  Xiaomi-12.m4
