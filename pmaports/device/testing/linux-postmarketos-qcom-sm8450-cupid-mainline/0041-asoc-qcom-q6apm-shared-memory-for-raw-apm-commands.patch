@@ -1,0 +1,177 @@
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Subject: [PATCH] ASoC: qcom: q6apm: shared memory for raw APM commands
+
+The ADSP takes in-band GPR packets only up to its 4 KiB glink receive
+buffers; it acknowledges requests for larger ones without providing them.
+Commands with larger payloads, such as the VCPM calibration tables of the
+voice call graphs (up to 16 KiB), have to point into shared memory, as
+GSL does on Android.
+
+/sys/kernel/debug/q6apm_raw_shm is a 64 KiB DMA buffer of the q6apm-dais
+device (whose SMMU stream the ADSP uses for audio buffers). Reading it
+returns [u64 DSP address][u32 size], the address being the IOVA with the
+stream ID in bits 32 and up as in q6apm-dai; writing [u32 offset][data]
+fills it. Userspace maps it with APM_CMD_SHARED_MEM_MAP_REGIONS through
+q6apm_raw (0040) and points commands such as APM_CMD_REGISTER_CFG at it.
+---
+--- a/sound/soc/qcom/qdsp6/q6apm.c
++++ b/sound/soc/qcom/qdsp6/q6apm.c
+@@ -4,6 +4,7 @@
+ #include <dt-bindings/soc/qcom,gpr.h>
+ #include <linux/debugfs.h>
+ #include <linux/delay.h>
++#include <linux/dma-mapping.h>
+ #include <linux/jiffies.h>
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+@@ -983,6 +984,112 @@
+ 	.llseek = default_llseek,
+ };
+ 
++/*
++ * A buffer the ADSP can read, for raw commands with out-of-band payloads:
++ * the ADSP takes in-band packets only up to its 4 KiB receive buffers (it
++ * acknowledges glink requests for larger ones without providing them), so
++ * e.g. persistent calibration goes through shared memory, as GSL does on
++ * Android. Reading q6apm_raw_shm returns [u64 DSP address][u32 size];
++ * writing [u32 offset][data] copies data into the buffer. Userspace maps it
++ * with APM_CMD_SHARED_MEM_MAP_REGIONS through q6apm_raw and points
++ * APM_CMD_REGISTER_CFG etc. at it. The DSP address is the IOVA of the
++ * q6apm-dais device with its SMMU stream ID in bits 32+, as q6apm-dai uses.
++ */
++#define Q6APM_RAW_SHM_SIZE	SZ_64K
++#define Q6APM_RAW_SID_MASK	0xF
++
++static int q6apm_raw_shm_alloc(struct q6apm *apm)
++{
++	struct of_phandle_args args;
++	struct platform_device *pdev;
++	struct device_node *np;
++	u64 sid = 0;
++
++	if (apm->raw_shm)
++		return 0;
++
++	np = of_get_compatible_child(apm->dev->of_node, "qcom,q6apm-dais");
++	if (!np)
++		return -ENODEV;
++
++	if (!of_parse_phandle_with_fixed_args(np, "iommus", 1, 0, &args)) {
++		sid = args.args[0] & Q6APM_RAW_SID_MASK;
++		of_node_put(args.np);
++	}
++
++	pdev = of_find_device_by_node(np);
++	of_node_put(np);
++	if (!pdev)
++		return -ENODEV;
++
++	apm->raw_shm = dma_alloc_coherent(&pdev->dev, Q6APM_RAW_SHM_SIZE,
++					  &apm->raw_shm_dma, GFP_KERNEL);
++	if (!apm->raw_shm) {
++		put_device(&pdev->dev);
++		return -ENOMEM;
++	}
++
++	apm->raw_shm_dev = &pdev->dev;
++	apm->raw_shm_addr = apm->raw_shm_dma | (sid << 32);
++
++	return 0;
++}
++
++static ssize_t q6apm_raw_shm_write(struct file *file, const char __user *ubuf,
++				   size_t count, loff_t *ppos)
++{
++	struct q6apm *apm = file->private_data;
++	size_t len;
++	u32 offset;
++	int ret;
++
++	if (count < sizeof(offset))
++		return -EINVAL;
++
++	if (copy_from_user(&offset, ubuf, sizeof(offset)))
++		return -EFAULT;
++
++	len = count - sizeof(offset);
++	if (offset > Q6APM_RAW_SHM_SIZE || len > Q6APM_RAW_SHM_SIZE - offset)
++		return -EINVAL;
++
++	mutex_lock(&apm->raw_lock);
++	ret = q6apm_raw_shm_alloc(apm);
++	if (!ret && copy_from_user(apm->raw_shm + offset, ubuf + sizeof(offset), len))
++		ret = -EFAULT;
++	mutex_unlock(&apm->raw_lock);
++
++	return ret ? ret : count;
++}
++
++static ssize_t q6apm_raw_shm_read(struct file *file, char __user *ubuf,
++				  size_t count, loff_t *ppos)
++{
++	struct q6apm *apm = file->private_data;
++	struct {
++		__le64 addr;
++		__le32 size;
++	} __packed info;
++	int ret;
++
++	mutex_lock(&apm->raw_lock);
++	ret = q6apm_raw_shm_alloc(apm);
++	info.addr = cpu_to_le64(apm->raw_shm_addr);
++	info.size = cpu_to_le32(Q6APM_RAW_SHM_SIZE);
++	mutex_unlock(&apm->raw_lock);
++	if (ret)
++		return ret;
++
++	return simple_read_from_buffer(ubuf, count, ppos, &info, sizeof(info));
++}
++
++static const struct file_operations q6apm_raw_shm_fops = {
++	.open = simple_open,
++	.write = q6apm_raw_shm_write,
++	.read = q6apm_raw_shm_read,
++	.llseek = default_llseek,
++};
++
+ static int apm_probe(gpr_device_t *gdev)
+ {
+ 	struct device *dev = &gdev->dev;
+@@ -1012,6 +1119,8 @@
+ 	init_waitqueue_head(&apm->raw_wait);
+ 	apm->raw_dentry = debugfs_create_file("q6apm_raw", 0600, NULL, apm,
+ 					      &q6apm_raw_fops);
++	apm->raw_shm_dentry = debugfs_create_file("q6apm_raw_shm", 0600, NULL,
++						  apm, &q6apm_raw_shm_fops);
+ 
+ 	g_apm = apm;
+ 
+@@ -1034,7 +1143,13 @@
+ {
+ 	struct q6apm *apm = dev_get_drvdata(&gdev->dev);
+ 
++	debugfs_remove(apm->raw_shm_dentry);
+ 	debugfs_remove(apm->raw_dentry);
++	if (apm->raw_shm) {
++		dma_free_coherent(apm->raw_shm_dev, Q6APM_RAW_SHM_SIZE,
++				  apm->raw_shm, apm->raw_shm_dma);
++		put_device(apm->raw_shm_dev);
++	}
+ 	of_platform_depopulate(&gdev->dev);
+ 	snd_soc_unregister_component(&gdev->dev);
+ }
+--- a/sound/soc/qcom/qdsp6/q6apm.h
++++ b/sound/soc/qcom/qdsp6/q6apm.h
+@@ -77,6 +77,12 @@
+ 	size_t raw_rsp_len;
+ 	u8 raw_rsp[4096];
+ 	struct dentry *raw_dentry;
++	/* q6apm_raw_shm: out-of-band payloads for raw commands */
++	struct device *raw_shm_dev;
++	void *raw_shm;
++	dma_addr_t raw_shm_dma;
++	u64 raw_shm_addr;
++	struct dentry *raw_shm_dentry;
+ };
+ 
+ struct audio_buffer {

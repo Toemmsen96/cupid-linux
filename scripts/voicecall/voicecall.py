@@ -12,11 +12,13 @@ build ACDB NAMES OUTDIR [handset|speaker] [rx-only] [no-ecns] [fit[=RATE]]
     topology's backends carry the same module instance IDs, so the voice
     graphs connect to them while a Linux playback and capture stream keep
     them running. no-ecns leaves the ECNS module out of the TX processing
-    subgraph (NO_ECNS). fit keeps only the LTE entries for one vocoder
-    sample rate (default 32000: EVS super-wideband, what VoLTE negotiated
-    in tests) of the VCPM calibration tables, so that each command fits the
-    ADSP's 4 KiB receive buffers (GPR sends without waiting for a bigger
-    one). VCPM reports the rate in use: see keys.
+    subgraph (NO_ECNS). The VCPM calibration tables (up to 16 KiB) go
+    through shared memory (kernel r20, /sys/kernel/debug/q6apm_raw_shm):
+    DIR/cal/<sg>.bin, registered by *.oob commands. fit instead keeps only
+    the LTE entries for one vocoder sample rate (default 32000: EVS
+    super-wideband, what VoLTE negotiated in tests) and sends them in-band,
+    which needs no shared memory: the ADSP takes in-band packets only up
+    to its 4 KiB receive buffers. VCPM reports the rate in use: see keys.
 
 start DIR / stop DIR
     (phone, root) Send DIR/start/* or DIR/stop/* in order through
@@ -28,7 +30,8 @@ keys DIR
     rate and network come from the modem once it starts the vocoder, so
     during a working call they are set; empty means the modem never did.
 
-Command file: [u32 opcode][payload]. For APM commands with an in-band
+Command file: [u32 opcode][payload]. *.oob: [u32 opcode][u32 sg], sent
+with the subgraph's calibration from DIR/cal in shared memory. For APM commands with an in-band
 payload the payload starts with the 16-byte apm_cmd_header.
 """
 import os, struct, sys
@@ -198,10 +201,18 @@ def build(acdb_path, names, outdir, rx="rx-handset", tx=True, ecns=True, fit=Non
             r = vcpm_cal.vcpm_blob(a, sg, () if ecns else NO_ECNS[0],
                                    {vcpm_cal.NETWORK: vcpm_cal.NETWORK_LTE,
                                     vcpm_cal.SAMPLING_RATE: fit} if fit else None)
-            if r:
-                vc = param(*r)
+            if not r:
+                continue
+            vc = param(*r)
+            if fit:
                 files["start"].append(("vcpm-cal-%x" % (sg & 0xff), cmd(REGISTER_CFG, vc)))
                 dereg.append(("vcpm-uncal-%x" % (sg & 0xff), cmd(DEREGISTER_CFG, vc)))
+                continue
+            os.makedirs(os.path.join(outdir, "cal"), exist_ok=True)
+            with open(os.path.join(outdir, "cal", "%08x.bin" % sg), "wb") as f:
+                f.write(vc)
+            files["start"].append(("vcpm-cal-%x.oob" % (sg & 0xff), struct.pack("<II", REGISTER_CFG, sg)))
+            dereg.append(("vcpm-uncal-%x.oob" % (sg & 0xff), struct.pack("<II", DEREGISTER_CFG, sg)))
     files["start"].append(("vsid", cmd(SET_CFG, param(VCPM_IID, VCPM_VSID, struct.pack("<I", VSID)) +
                                        param(VCPM_IID, VCPM_TX_DEV_PP_CHANNEL_INFO,
                                              struct.pack("<II", VSID, 1)))))
@@ -214,9 +225,10 @@ def build(acdb_path, names, outdir, rx="rx-handset", tx=True, ecns=True, fit=Non
         d = os.path.join(outdir, kind)
         os.makedirs(d, exist_ok=True)
         for i, (n, data) in enumerate(lst):
-            with open(os.path.join(d, "%02d-%s.cmd" % (i, n)), "wb") as f:
+            name = "%02d-%s" % (i, n) if n.endswith(".oob") else "%02d-%s.cmd" % (i, n)
+            with open(os.path.join(d, name), "wb") as f:
                 f.write(data)
-            print("%s/%02d-%s.cmd %d bytes" % (kind, i, n, len(data)))
+            print("%s/%s %d bytes" % (kind, name, len(data)))
 
 
 VCPM_ACTIVE_CAL_KEYS = 0x080011C1
@@ -250,11 +262,72 @@ def keys(d):
     return 0
 
 
+SHM_MAP, SHM_UNMAP, RSP_SHM_MAP = 0x0100100C, 0x0100100D, 0x02001001
+SHM_ALIGN = 64
+
+
+class Shm:
+    """The kernel's q6apm_raw_shm buffer, mapped on the ADSP for one run;
+    DIR/cal/*.bin laid out at fixed offsets, so stop finds them again."""
+
+    def __init__(self, d):
+        self.d = d
+        info = open("/sys/kernel/debug/q6apm_raw_shm", "rb").read()
+        self.addr, self.size = struct.unpack_from("<QI", info)
+        self.layout, off = {}, 0
+        cal = os.path.join(d, "cal")
+        for n in sorted(os.listdir(cal)):
+            data = open(os.path.join(cal, n), "rb").read()
+            self.layout[int(n[:8], 16)] = (off, data)
+            off += len(data) + (-len(data) % SHM_ALIGN)
+        if off > self.size:
+            raise OSError("calibration (%d bytes) exceeds the shared buffer" % off)
+        self.handle_file = os.path.join(d, ".shm-handle")
+        self.handle = None
+        if os.path.exists(self.handle_file):
+            self.handle = int(open(self.handle_file).read(), 0)
+
+    def map(self):
+        if self.handle is not None:
+            return
+        # payload right after the GPR header: pool SHMEM8_4K, 1 region
+        rsp = raw(struct.pack("<IHHIIII", SHM_MAP, 3, 1, 0, self.addr & 0xffffffff,
+                              self.addr >> 32, self.size))
+        op = struct.unpack_from("<I", rsp)[0]
+        if op != RSP_SHM_MAP:
+            raise OSError("shared memory map failed: response 0x%08x %s" % (op, rsp[4:16].hex()))
+        self.handle = struct.unpack_from("<I", rsp, 4)[0]
+        open(self.handle_file, "w").write("0x%x\n" % self.handle)
+
+    def unmap(self):
+        if self.handle is None:
+            return None
+        rsp = raw(struct.pack("<II", SHM_UNMAP, self.handle))
+        os.unlink(self.handle_file)
+        self.handle = None
+        return rsp
+
+    def command(self, opcode, sg):
+        """Header-only APM command with the subgraph's table in shared memory."""
+        self.map()
+        off, data = self.layout[sg]
+        fd = os.open("/sys/kernel/debug/q6apm_raw_shm", os.O_WRONLY)
+        try:
+            os.write(fd, struct.pack("<I", off) + data)
+        finally:
+            os.close(fd)
+        a = self.addr + off
+        return struct.pack("<IIIII", opcode, a & 0xffffffff, a >> 32, self.handle, len(data))
+
+
 def run(d, kind):
     path = os.path.join(d, kind)
     rc = 0
+    shm = Shm(d) if os.path.isdir(os.path.join(d, "cal")) else None
     for n in sorted(os.listdir(path)):
         data = open(os.path.join(path, n), "rb").read()
+        if n.endswith(".oob"):
+            data = shm.command(*struct.unpack_from("<II", data))
         fd = os.open("/sys/kernel/debug/q6apm_raw", os.O_RDWR)
         try:
             os.write(fd, data)
@@ -274,6 +347,10 @@ def run(d, kind):
                     return rc
         else:
             print("%s: response 0x%08x %s" % (n, op, rsp[4:68].hex()))
+    if shm and kind == "stop":
+        rsp = shm.unmap()
+        if rsp:
+            print("unmap: response 0x%08x status 0x%x" % struct.unpack_from("<I4xI", rsp))
     return rc
 
 

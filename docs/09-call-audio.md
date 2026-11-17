@@ -128,12 +128,16 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   removes the ECNS module from the TX processing subgraph (mic chain
   0x41a1 straight to 0x41a3, AVC sink 0x41a4 dropped). `fit` keeps only the
   LTE entries for one sample rate (`fit=RATE`, default 32000, EVS
-  super-wideband as negotiated in tests). Needed before kernel r19: GPR
-  sent with `rpmsg_trysend`, so a command larger than the ADSP's 4 KiB
-  receive buffers (about 4040 bytes) failed with `EBUSY`. From r19
-  (patch 0041) `q6apm_raw` sends with `gpr_send_pkt_sleep()`, which lets
-  glink request a large enough buffer, so the full tables (up to 16 KiB)
-  go through and `fit` is unnecessary.
+  super-wideband as negotiated in tests) and sends them in-band. The ADSP
+  takes in-band packets only up to its 4 KiB glink receive buffers: GPR
+  sends with `rpmsg_trysend` (`EBUSY`), and a blocking send (tried in
+  kernel r19) loops forever, because the ADSP acknowledges requests for a
+  larger buffer without providing one. So, as GSL on Android, the full
+  tables go through shared memory: kernel r20 (0041) adds
+  `/sys/kernel/debug/q6apm_raw_shm`, a 64 KiB buffer the ADSP can read;
+  without `fit`, `build` writes the tables to `DIR/cal/` and `start` maps
+  the buffer (`APM_CMD_SHARED_MEM_MAP_REGIONS`), copies them in and sends
+  header-only `REGISTER_CFG` commands; `stop` deregisters and unmaps.
 - `voicecall.py keys <dir>` (during a call) reads
   `VCPM_PARAM_ID_ACTIVE_CAL_KEYS` per subgraph: vocoder class, sample rate
   and network appear once the modem has started the vocoder.
@@ -173,7 +177,7 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
 - Next: a call with the stock graphs (ECNS included) and the full
-  calibration tables (kernel r19), louder beeps; then the kernel voice
+  calibration tables (kernel r20, shared memory), louder beeps; then the kernel voice
   front end.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
