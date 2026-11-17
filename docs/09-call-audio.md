@@ -76,10 +76,22 @@ the TX processing subgraph can be replaced by one without 0x07001031.
 - TX PP 0xb000003e: `00000001 b000003e 00000001 080011b2 0000000c 00000001 080011ad 0000419a`
 
 (VCPM_PROPERTY_ID_TAG_INFO 0x080011B2 lists tag -> module instance: decoder,
-RX mailbox, encoder, TX mailbox, TTY modules, TX smart sync.) The voice
-stream calibration is VCPM's own table (`VCPM_PARAM_ID_CAL_TABLE`, ACDB
-chunks VCCD/VCMK/VCKT/VCLU/VCDE), not extracted yet; probably optional for
-first audio.
+RX mailbox, encoder, TX mailbox, TTY modules, TX smart sync.)
+
+### VCPM calibration table
+
+The voice subgraphs' calibration is not in the ACDB's audio tables but in
+VCPM's own (chunks VCCD/VCMK/VCKT/VCLU/VCDE). The ACDB library
+(`BuildVcpmBlob` in audioreach-graphservices) packs it per subgraph into
+one parameter, `VCPM_PARAM_ID_CAL_TABLE` 0x08001163 for instance 4, and GSL
+registers it as persistent calibration (`APM_CMD_REGISTER_CFG`, from shared
+memory) right after the graph open. It holds what VCPM applies when the
+modem starts the vocoder, keyed by vocoder class, sample rate, network and
+volume step: resampler output rates (0x421f), the TX MFC formats
+(0x4197/0x4198), filters, gains, `VCPM_PARAM_ID_CLK_CTRL`, ECNS tuning.
+`scripts/acdb/vcpm_cal.py` rebuilds it: 0x40 1.1 KiB, 0x41 0.9 KiB, 0x44
+16 KiB (7.5 KiB with only the LTE entries), 0x3f 3 KiB, 0x3e 11 KiB; 0x45,
+0x39 and 0x02 have none.
 
 ## What Linux needs
 
@@ -90,9 +102,12 @@ first audio.
    VCPM voice-config blocks for instance 4.
 2. Set-config with the device defaults (TDM sink with lane 0x2, codec DMA
    interface, MFCs).
-3. To instance 4: VSID 0x11C05000, TX channel info, optionally the volume
+3. VCPM calibration tables for 0x40/0x41/0x44/0x3f/0x3e
+   (`REGISTER_CFG`).
+4. To instance 4: VSID 0x11C05000, TX channel info, optionally the volume
    calibration key.
-4. Prepare and start all subgraphs.
+5. Prepare and start all subgraphs.
+6. QRTR routing between the modem and the ADSP (see State).
 
 ## Bring-up tooling
 
@@ -106,32 +121,54 @@ first audio.
   - handset microphone, codec DMA TX3: `0x43af -> log 0x4147 -> splitter
     0x4167` (port 1 to the capture stream, port 0xd to the voice TX graph).
 - `scripts/voicecall/voicecall.py build <acdb> scripts/acdb/names.json <dir>
-  [handset|speaker] [rx-only]` turns the ACDB graphs into command files
-  (graph open with the stock subgraph data, which already carries the VCPM
-  voice configuration; module calibration; VCPM VSID and TX channel info;
-  prepare; start); `voicecall.py start|stop <dir>` sends them on the phone.
+  [handset|speaker] [rx-only] [no-ecns] [fit]` turns the ACDB graphs into
+  command files (graph open with the stock subgraph data, which already
+  carries the VCPM voice configuration; module calibration; VCPM
+  calibration tables; VCPM VSID and TX channel info; prepare; start);
+  `voicecall.py start|stop <dir>` sends them on the phone. `no-ecns`
+  removes the ECNS module from the TX processing subgraph (mic chain
+  0x41a1 straight to 0x41a3, AVC sink 0x41a4 dropped). `fit` keeps only the
+  LTE and 16 kHz calibration entries: GPR sends with `rpmsg_trysend`, so a
+  command larger than the ADSP's 4 KiB receive buffers (about 4040 bytes)
+  fails with `EBUSY`.
+- `voicecall.py keys <dir>` (during a call) reads
+  `VCPM_PARAM_ID_ACTIVE_CAL_KEYS` per subgraph: vocoder class, sample rate
+  and network appear once the modem has started the vocoder.
+- Testing without a second person: the mic capture runs through the
+  splitter, so a recording of it shows what the speaker plays; beeps
+  played through the Linux speaker stream during a call go out through the
+  voice TX path. Keep the amplifiers at `Digital PCM Volume` 625.
 
 ## State (2026-11-17)
 
-- RX alone (stream 0x40/0x41, PP 0x44/0x45) opens, prepares and starts
-  with status 0, connected to the running speaker backend, but no call
-  audio comes out: VCPM reports graphs to the modem's voice service and
-  expects both directions (the TX channel info must be set "after the VSID,
-  before prepare").
-- TX: the stream subgraph 0x3f opens; the processing subgraph 0x3e fails
-  (`AR_EFAILED`). Tested module by module, only the ECNS module
-  0x07001031 cannot be created: the ADSP loads it as
-  `smecns_v2_module_fvxi.so.1` from the DSP partition (`dspso/adsp`; it is
-  in the ADSP's built-in module database, not in the ACDB's AMDB
-  registration list, which only has Bluetooth codecs). Android serves those
-  files to the ADSP's audio PD with `audioadsprpcd`; hexagonrpcd attaches
-  only to the root PD (its unit is skipped on devices with an SDSP) and the
-  sensors PD, and serving the files to the root PD did not produce a
-  single request.
-- Next: (1) a TX processing subgraph without ECNS (input of 0x41a0 straight
-  to 0x41a3) to get both directions open and test whether audio flows;
-  (2) audio PD file serving for the ECNS library (hexagonrpcd support for
-  the static audio PD, or another server).
+- ECNS: the TX processing subgraph 0x3e fails to open only because of
+  the ECNS module 0x07001031, which the ADSP loads as
+  `smecns_v2_module_fvxi.so.1` from the DSP partition through its audio PD
+  (Android: `audioadsprpcd audiopd`; hexagonrpcd serves only the root and
+  sensors PDs). Without it (`no-ecns`) RX and TX open, take their VCPM
+  calibration (`fit`), prepare and start with status 0 together with the
+  running backends.
+- Status 0 for prepare/start proves little: the APM hands voice subgraphs
+  to VCPM, and VCPM starts them only when the modem starts the vocoder.
+  Three test calls (without and with the calibration tables) connected,
+  but neither direction carried audio, and the VCPM vocoder loopback
+  (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY` with loopback VSID 0x12006000,
+  accepted) produced nothing without a call either.
+- Likely cause: the modem never reaches VCPM. The ADSP image has
+  `GPR_QSOC_ADSP_SERVICE` and `GPR_QSOC_MODEM_CLIENT`: modem and ADSP talk
+  GPR over QRTR, and their only QRTR links go to the application
+  processor, which routes between them. Mainline QRTR delivers every
+  received data packet to a local port regardless of the destination node,
+  and its name service announces only local services, so modem and ADSP
+  neither learn about nor reach each other. Downstream kernels forward
+  (`qrtr_fwd_pkt`, msm-4.14 and later). Kernel patch 0041 (r18) adds
+  forwarding and relays remote services; it compiles (as a module on the
+  phone), not tested yet.
+- Next: boot 0041 (WiFi, modem, sensors and battery all use QRTR, so check
+  them first), then one call with `voicecall.py keys` and a kprobe on
+  `qrtr_endpoint_post` logging packets for other nodes. Then the audio PD
+  for ECNS, full-size calibration (blocking `rpmsg_send` for large
+  packets, or shared memory as GSL does), and the kernel voice front end.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
   (`/org/freedesktop/ModemManager1/Call/N`, the short form crashes mmcli).

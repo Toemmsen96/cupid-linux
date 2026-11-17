@@ -128,6 +128,10 @@ the ADSP (`qcom-battmgr`), so without adsp there is no battery. The modem
 needs `rmtfs` (`soc-qcom-modem`) before `mpss` will stay up; `qmicli` and
 ModemManager are then the next steps.
 
+Do not stop the ADSP (`echo stop > /sys/class/remoteproc/remoteproc1/state`)
+on 7.3: the phone hangs hard and resets a few seconds later, with nothing in
+the log.
+
 - Calls stay in "dialing" or incoming calls go to voicemail: no carrier
   configuration is active, so the modem has no VoLTE.
   `journalctl -u cupid-modem-config` shows what the service did; it needs

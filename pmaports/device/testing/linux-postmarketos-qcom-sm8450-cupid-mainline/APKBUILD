@@ -38,11 +38,13 @@
 # full-level square of its sign.
 # r17: 0040 raw APM commands through debugfs (q6apm_raw), for the voice call
 # graph bring-up (docs/09-call-audio.md).
+# r18: 0041 QRTR routes between remote nodes (modem <-> ADSP), which the
+# voice call path needs; untested.
 # Keep stable/next as fallbacks: pmbootstrap config kernel next
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=17
+pkgrel=18
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -106,6 +108,7 @@ source="
 	0038-asoc-cs35l41-asp-width-from-physical-width.patch
 	0039-asoc-wcd-common-handle-alerts-without-a-regmap.patch
 	0040-asoc-qcom-q6apm-raw-apm-commands-through-debugfs.patch
+	0041-net-qrtr-route-between-remote-nodes.patch
 "
 builddir="$srcdir/linux-$pkgver"
 
@@ -184,4 +187,5 @@ c223479cdb1e825b9fe8847a5f1dd37d7a851091bea61df5047d3aaa0fa97fd9eed3401af1253a94
 822be51ea717c2ad3c10f8ee82de8b5d7b71597379aeb9868f8df790a1877ae3854198fbdd03b7e6c93402fe5f5b8684f4561bf6d0b9d33ec4623ffcbb3fa066  0038-asoc-cs35l41-asp-width-from-physical-width.patch
 2a1c059b70979278f3bdce2ec33209d191f4f0e9277e98e8d03a6bd3a8e11d19b2d72ae95b37fc583ec36aa7b9332d00f4f0935f8d5a500468de7fd900f29495  0039-asoc-wcd-common-handle-alerts-without-a-regmap.patch
 59cfae4db71d2343f56006f84ec709cdbe6eb8601ab86135a6982f127d5d82ca1e3d4a11026e8eb3e86c72727f0b9e0f1da3422d6d703308895e318b94d2c74c  0040-asoc-qcom-q6apm-raw-apm-commands-through-debugfs.patch
+967c916e4f1d1d580b75a58017b1aecfbdd0be250da6cc2f3958bf3af05215a305adbd1bac9473a084ed67510a631994b34dc0ee6400edb0b3513dac8a67a06b  0041-net-qrtr-route-between-remote-nodes.patch
 "
