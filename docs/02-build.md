@@ -43,6 +43,16 @@ Useful variants:
 The kernel variant and UI are stored in the config, so `scripts/pmb config
 kernel next` and `scripts/pmb config ui phosh` work as well.
 
+## Building on the phone
+
+Package updates for a running phone can be built on the phone itself with
+`abuild`, without pmbootstrap and without root on the host:
+`scripts/phone-build.sh [-i] PACKAGE...` copies the package directories over
+SSH, builds them there (the kernel takes about half an hour) and with `-i`
+installs them (a kernel package flashes the boot partition; reboot to use
+it). The one-time setup on the phone is in the script's header. The phone
+downloads sources and build dependencies itself, so keep it on Wi-Fi.
+
 ## Editing packages
 
 Edit under `pmaports/device/testing/` (and `pmaports/temp/` for the
