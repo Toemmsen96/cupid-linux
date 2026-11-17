@@ -107,7 +107,6 @@ volume step: resampler output rates (0x421f), the TX MFC formats
 4. To instance 4: VSID 0x11C05000, TX channel info, optionally the volume
    calibration key.
 5. Prepare and start all subgraphs.
-6. QRTR routing between the modem and the ADSP (see State).
 
 ## Bring-up tooling
 
@@ -130,7 +129,8 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   0x41a1 straight to 0x41a3, AVC sink 0x41a4 dropped). `fit` keeps only the
   LTE and 16 kHz calibration entries: GPR sends with `rpmsg_trysend`, so a
   command larger than the ADSP's 4 KiB receive buffers (about 4040 bytes)
-  fails with `EBUSY`.
+  fails with `EBUSY`; `fit=RATE` picks the rate (default 32000, EVS
+  super-wideband as negotiated in tests).
 - `voicecall.py keys <dir>` (during a call) reads
   `VCPM_PARAM_ID_ACTIVE_CAL_KEYS` per subgraph: vocoder class, sample rate
   and network appear once the modem has started the vocoder.
@@ -148,27 +148,20 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   sensors PDs). Without it (`no-ecns`) RX and TX open, take their VCPM
   calibration (`fit`), prepare and start with status 0 together with the
   running backends.
-- Status 0 for prepare/start proves little: the APM hands voice subgraphs
-  to VCPM, and VCPM starts them only when the modem starts the vocoder.
-  Three test calls (without and with the calibration tables) connected,
-  but neither direction carried audio, and the VCPM vocoder loopback
-  (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY` with loopback VSID 0x12006000,
-  accepted) produced nothing without a call either.
-- Likely cause: the modem never reaches VCPM. The ADSP image has
-  `GPR_QSOC_ADSP_SERVICE` and `GPR_QSOC_MODEM_CLIENT`: modem and ADSP talk
-  GPR over QRTR, and their only QRTR links go to the application
-  processor, which routes between them. Mainline QRTR delivers every
-  received data packet to a local port regardless of the destination node,
-  and its name service announces only local services, so modem and ADSP
-  neither learn about nor reach each other. Downstream kernels forward
-  (`qrtr_fwd_pkt`, msm-4.14 and later). Kernel patch 0041 (r18) adds
-  forwarding and relays remote services; it compiles (as a module on the
-  phone), not tested yet.
-- Next: boot 0041 (WiFi, modem, sensors and battery all use QRTR, so check
-  them first), then one call with `voicecall.py keys` and a kprobe on
-  `qrtr_endpoint_post` logging packets for other nodes. Then the audio PD
-  for ECNS, full-size calibration (blocking `rpmsg_send` for large
-  packets, or shared memory as GSL does), and the kernel voice front end.
+- The modem does start the vocoder: during a call (already while it
+  rings) `voicecall.py keys` shows vocoder class EVS (0x0800116A) at
+  32 kHz on 0x40, 0x3f and 0x3e. Modem and ADSP talk to each other
+  directly; a kprobe on `qrtr_endpoint_post` saw no packet routed through
+  the application processor, so mainline QRTR is not in the way.
+- Four answered test calls carried no audible audio: without calibration
+  tables, with tables trimmed to 16 kHz (no entries for the 32 kHz in use),
+  and the far end heard at most "something very quiet" of the beeps. The
+  VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
+  VSID 0x12006000) produced nothing without a call.
+- Next: a call with the 32 kHz tables (`fit`, now the default rate) and
+  louder beeps; then full-size calibration (blocking `rpmsg_send` for
+  large packets, or shared memory as GSL does), the audio PD for ECNS, and
+  the kernel voice front end.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
   (`/org/freedesktop/ModemManager1/Call/N`, the short form crashes mmcli).

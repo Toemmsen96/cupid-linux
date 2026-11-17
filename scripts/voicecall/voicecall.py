@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Voice call graphs on the ADSP, sent as raw APM commands (bring-up tool).
 
-build ACDB NAMES OUTDIR [handset|speaker] [rx-only] [no-ecns] [fit]
+build ACDB NAMES OUTDIR [handset|speaker] [rx-only] [no-ecns] [fit[=RATE]]
     (host, needs scripts/acdb) Build the command files for a call from the
     stock Forte ACDB: graph open for the voice RX and TX subgraphs (their
     ACDB data includes the VCPM voice configuration), their calibration,
@@ -12,9 +12,11 @@ build ACDB NAMES OUTDIR [handset|speaker] [rx-only] [no-ecns] [fit]
     topology's backends carry the same module instance IDs, so the voice
     graphs connect to them while a Linux playback and capture stream keep
     them running. no-ecns leaves the ECNS module out of the TX processing
-    subgraph (NO_ECNS). fit keeps only the LTE and 16 kHz entries of the
-    VCPM calibration tables, so that each command fits the ADSP's 4 KiB
-    receive buffers (GPR sends without waiting for a bigger one).
+    subgraph (NO_ECNS). fit keeps only the LTE entries for one vocoder
+    sample rate (default 32000: EVS super-wideband, what VoLTE negotiated
+    in tests) of the VCPM calibration tables, so that each command fits the
+    ADSP's 4 KiB receive buffers (GPR sends without waiting for a bigger
+    one). VCPM reports the rate in use: see keys.
 
 start DIR / stop DIR
     (phone, root) Send DIR/start/* or DIR/stop/* in order through
@@ -152,7 +154,7 @@ def sg_list_cmd(opcode, sgs):
                              b"".join(struct.pack("<I", s) for s in sgs)))
 
 
-def build(acdb_path, names, outdir, rx="rx-handset", tx=True, ecns=True, fit=False):
+def build(acdb_path, names, outdir, rx="rx-handset", tx=True, ecns=True, fit=None):
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "acdb"))
     import acdb as A
     import vcpm_cal
@@ -195,7 +197,7 @@ def build(acdb_path, names, outdir, rx="rx-handset", tx=True, ecns=True, fit=Fal
         for sg in sgs:
             r = vcpm_cal.vcpm_blob(a, sg, () if ecns else NO_ECNS[0],
                                    {vcpm_cal.NETWORK: vcpm_cal.NETWORK_LTE,
-                                    vcpm_cal.SAMPLING_RATE: 16000} if fit else None)
+                                    vcpm_cal.SAMPLING_RATE: fit} if fit else None)
             if r:
                 vc = param(*r)
                 files["start"].append(("vcpm-cal-%x" % (sg & 0xff), cmd(REGISTER_CFG, vc)))
@@ -279,7 +281,9 @@ def main():
     if len(sys.argv) >= 5 and sys.argv[1] == "build":
         rx = "rx-" + (sys.argv[5] if len(sys.argv) > 5 else "handset")
         build(sys.argv[2], sys.argv[3], sys.argv[4], rx, "rx-only" not in sys.argv[6:],
-              "no-ecns" not in sys.argv[6:], "fit" in sys.argv[6:])
+              "no-ecns" not in sys.argv[6:],
+              next((int(a[4:]) if a[4:] else 32000 for a in sys.argv[6:]
+                    if a == "fit" or a.startswith("fit=")), None))
         return 0
     if len(sys.argv) == 3 and sys.argv[1] == "keys":
         return keys(sys.argv[2])
