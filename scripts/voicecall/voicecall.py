@@ -6,10 +6,11 @@ build ACDB NAMES OUTDIR [handset|speaker] [rx-only]
     (host, needs scripts/acdb) Build the command files for a call from the
     stock Forte ACDB: graph open for the voice RX and TX subgraphs (their
     ACDB data includes the VCPM voice configuration), their calibration,
-    the VCPM session parameters, and prepare/start. Stock's speaker device subgraph is left out: the Linux
-    topology's TDM speaker backend carries the same module instance IDs
-    (SAL 0x4012, MFC 0x48ba, TDM sink 0x428f), so the voice graph connects
-    to it while a Linux playback stream keeps it running.
+    the VCPM session parameters, and prepare/start. Stock's speaker and
+    microphone device subgraphs are left out (LINUX_SGS): the Linux
+    topology's backends carry the same module instance IDs, so the voice
+    graphs connect to them while a Linux playback and capture stream keep
+    them running.
 
 start DIR / stop DIR
     (phone, root) Send DIR/start/* or DIR/stop/* in order through
@@ -39,8 +40,11 @@ GKV = {
     "tx-handset": {0xA3000000: 0xA3000004, 0xAD000000: 0xAD000008, 0xB1000000: 0xB1000007,
                    0xB3000000: 0xB3000001},
 }
-# Owned by the Linux topology (speaker TDM backend).
-LINUX_SGS = {0xB0000002}
+# Owned by the Linux topology, with stock's module instance IDs: the
+# speaker TDM backend (SAL 0x4012 -> MFC 0x48ba -> TDM 0x428f) and the
+# handset microphone backend (codec DMA TX3 0x43af -> log 0x4147 ->
+# splitter 0x4167). Linux streams keep them running.
+LINUX_SGS = {0xB0000002, 0xB0000039}
 
 def pad8(b):
     return b + b"\0" * (-len(b) % 8)

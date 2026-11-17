@@ -3,7 +3,7 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=19
+pkgrel=20
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -69,8 +69,10 @@ source="
 	audioreach-topology-$_tplg_commit.tar.gz::https://github.com/linux-msm/audioreach-topology/archive/$_tplg_commit.tar.gz
 	Xiaomi-12.m4
 	module_sal.m4
+	module_splitter.m4
 	module_tdm.m4
 	subgraph-device-tdm-playback.m4
+	subgraph-device-codec-dma-capture-split.m4
 "
 
 build() {
@@ -212,8 +214,10 @@ c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f
 60de69204fa30e17ce48362fb4afcde3f97262f33880f26d56c400c817e2fd27a64c3ee8539c461cd9242bbabdca395fb35af3cc35647b66cd29ccd1ee21e82b  90-device-xiaomi-cupid.preset
 2f47bcd412f51054f38642c458ca6811de5096630305335ac82c70dbd742ba4a6034154054d042f834250651618823e875f8f70f7fe027ed3dc90b626fe49270  81-libssc-xiaomi-cupid.rules
 6c33f96ca1b9a127758bf8f9ff2df087c015bfae1f8503ec2d2601f952ce957eb9642cfbfc0df80db3fda8cd445537f80e3f903c2c681f4e5abdd3d8fb2a73d6  audioreach-topology-d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037.tar.gz
-b0c19c4ea919c92ec5a18b1dbfb935edde7837d6afc276dbfc877ed3751bf999e2350df6b2d23298235c948aec524005238057d14fd658de2c11956510bf8d19  Xiaomi-12.m4
+05e8be885bd4e1d25c26d8cc5e59f1804e6a5897209fb86cc47c0c9a8433d7b6450a7d6b2e8bf7c06c8d20408a03a6dfbaaa9c9a5d2af99bffe5345d03c22416  Xiaomi-12.m4
 ce485d20cbd3e23f93c3bd7f77028fbd21aa4b95f34914c5c9af3c180d42647bcb4dfbcaf8a24f4b3a4e51ef04f881740f393f335403eade343183dd04b0f741  module_sal.m4
+6ac0157dee134e857fbe2ff3b37714eb851bc05452503f552a03fc6464a2ed543631cc0db17d2fbaf5bb0d5873f4e0ef545b3f4a9b20e2dd0a7523f915b9b372  module_splitter.m4
 f5a9e68da20da7bc088a9da6be3b90ccd8a598000425613115a1831ed6388163b8583e67db667fad232e7702dc0add7bd1d27dcd1e3ff6afd73bbe9da830707f  module_tdm.m4
 6ea8a79e22f994d1f8addaf13319ddb3aae61ee66f9576417625ed45f0515ae5f159e77298554042805e3a91dc92f0946baa9d33e08de81a7332877f82d10780  subgraph-device-tdm-playback.m4
+8c28fc00a3b631dea0a0a2513a7e1d9ec026af0a8896a1b510a97653f2ee63cc6f47a7e65313a1315d1ad5e038b99d92664b3c7ec61fd5d30bc7dbdae531d431  subgraph-device-codec-dma-capture-split.m4
 "

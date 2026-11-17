@@ -98,19 +98,47 @@ first audio.
 
 - Kernel patch 0040 (r17) adds `/sys/kernel/debug/q6apm_raw`: write
   `[u32 opcode][payload]`, read back `[u32 response opcode][payload]`.
-- The topology's speaker backend is `SAL 0x4012 -> MFC 0x48ba -> TDM sink
-  0x428f`, stock's module instance IDs, so the voice RX graph connects to
-  it (SAL ports 0x20/0x22 handset, 0xc/0x10 speaker) and its control links
-  to the TDM sink resolve. A Linux playback stream (silence) keeps the
-  backend, its clocks and the amplifiers running.
+- The topology's speaker and microphone backends use stock's module
+  instance IDs, so the stock voice graphs connect to them while Linux
+  streams keep them running:
+  - speaker TDM: `SAL 0x4012 -> MFC 0x48ba -> TDM sink 0x428f` (voice RX
+    enters the SAL on ports 0x20/0x22 handset, 0xc/0x10 speaker);
+  - handset microphone, codec DMA TX3: `0x43af -> log 0x4147 -> splitter
+    0x4167` (port 1 to the capture stream, port 0xd to the voice TX graph).
 - `scripts/voicecall/voicecall.py build <acdb> scripts/acdb/names.json <dir>
   [handset|speaker] [rx-only]` turns the ACDB graphs into command files
-  (graph open with the stock subgraph data, which already carries the
-  VCPM voice configuration; module calibration; VCPM VSID and TX channel
-  info; prepare; start); `voicecall.py start|stop <dir>` sends them on the
-  phone. The TX device subgraph (codec DMA TX3) is opened by the tool, not
-  by Linux, so the microphone path has to be powered without a Linux
-  capture stream on that backend.
+  (graph open with the stock subgraph data, which already carries the VCPM
+  voice configuration; module calibration; VCPM VSID and TX channel info;
+  prepare; start); `voicecall.py start|stop <dir>` sends them on the phone.
+
+## State (2026-11-17)
+
+- RX alone (stream 0x40/0x41, PP 0x44/0x45) opens, prepares and starts
+  with status 0, connected to the running speaker backend, but no call
+  audio comes out: VCPM reports graphs to the modem's voice service and
+  expects both directions (the TX channel info must be set "after the VSID,
+  before prepare").
+- TX: the stream subgraph 0x3f opens; the processing subgraph 0x3e fails
+  (`AR_EFAILED`). Tested module by module, only the ECNS module
+  0x07001031 cannot be created: the ADSP loads it as
+  `smecns_v2_module_fvxi.so.1` from the DSP partition (`dspso/adsp`; it is
+  in the ADSP's built-in module database, not in the ACDB's AMDB
+  registration list, which only has Bluetooth codecs). Android serves those
+  files to the ADSP's audio PD with `audioadsprpcd`; hexagonrpcd attaches
+  only to the root PD (its unit is skipped on devices with an SDSP) and the
+  sensors PD, and serving the files to the root PD did not produce a
+  single request.
+- Next: (1) a TX processing subgraph without ECNS (input of 0x41a0 straight
+  to 0x41a3) to get both directions open and test whether audio flows;
+  (2) audio PD file serving for the ECNS library (hexagonrpcd support for
+  the static audio PD, or another server).
+- Practical notes: without a login, ModemManager voice calls need root
+  (polkit); `mmcli -o` needs the full object path
+  (`/org/freedesktop/ModemManager1/Call/N`, the short form crashes mmcli).
+  The login screen session runs gnome-calls, callaudiod and pmOS's
+  `call_audio_idle_suspend_workaround`, which keeps PulseAudio from
+  suspending the sound card during a call, i.e. keeps both backends
+  running, which is what the voice graphs need.
 
 Mainline AudioReach is missing: the VSID subgraph property (topology token +
 graph setup), module control links, arbitrary port IDs, a way to pass raw
