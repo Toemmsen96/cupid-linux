@@ -179,8 +179,8 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
 - Next: a call with the stock graphs (ECNS included) and the full
-  calibration tables (kernel r20, shared memory, verified without a call;
-  `~/vt`-style command set from `build ... handset`), louder beeps; then the kernel voice
+  calibration tables (kernel r20, shared memory, verified without a
+  call), louder beeps; then the kernel voice
   front end.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
