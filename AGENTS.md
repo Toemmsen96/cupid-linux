@@ -57,7 +57,7 @@ postmarketOS (and an Arch Linux ARM variant) for the Xiaomi 12 "cupid"
 ## Working on the phone
 
 - SSH target `$CUPID_PHONE`. sudo works there without a password.
-  Packages install with `sudo apk add -u --repository ~/packages/aports ...`
+  Packages install with `sudo apk add -u --no-network --repository ~/.local/share/abuild/aports ...`
   (phone-build.sh `-i` does this). A kernel package flashes the boot
   partition on installation; reboot to use it.
 - Audio: use `amixer -D hw:0` (UCM renames controls for `-c0`). Keep speaker

@@ -44,6 +44,6 @@ done
 
 if [ -n "$install" ]; then
 	# Every subpackage of the built packages that is installed now.
-	ssh "$PHONE" 'cd ~/packages/aports/aarch64 && sudo apk add -u --repository ~/packages/aports $(for p in '"$*"'; do
+	ssh "$PHONE" 'sudo apk add -u --no-network --repository ~/.local/share/abuild/aports $(for p in '"$*"'; do
 		. ~/aports/$p/APKBUILD 2>/dev/null; for s in $pkgname $subpackages; do s=${s%%:*}; apk info -e $s >/dev/null && echo $s; done; done)'
 fi
