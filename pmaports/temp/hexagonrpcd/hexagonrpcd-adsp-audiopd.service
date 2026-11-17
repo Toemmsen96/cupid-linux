@@ -1,0 +1,14 @@
+[Unit]
+Description=Server for FastRPC remote procedure calls from Qualcomm ADSP - audio PD
+# Needs a remote heap for the audio PD in the device tree
+ConditionPathExists=/dev/fastrpc-adsp
+
+[Service]
+ExecStart=/usr/bin/hexagonrpcd -f /dev/fastrpc-adsp -d adsp -a
+Restart=on-failure
+RestartSec=10
+User=fastrpc
+Group=fastrpc
+
+[Install]
+WantedBy=multi-user.target

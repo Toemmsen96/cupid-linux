@@ -126,6 +126,20 @@
 	};
 
 	reserved-memory {
+		/*
+		 * Heap of the ADSP's static audio PD, handed over when the PD
+		 * is created (FASTRPC_IOCTL_INIT_CREATE_STATIC "audiopd"). The
+		 * audio PD loads dynamic modules such as the voice ECNS from
+		 * the DSP partition through it. Same as kodiak/sm8250.
+		 */
+		adsp_rpc_remote_heap_mem: adsp-rpc-remote-heap {
+			compatible = "shared-dma-pool";
+			alloc-ranges = <0x0 0x80000000 0x0 0x80000000>;
+			reusable;
+			alignment = <0x0 0x400000>;
+			size = <0x0 0x800000>;
+		};
+
 		xbl_ramdump_mem: memory@a6b80000 {
 			reg = <0x0 0xa6b80000 0x0 0x280000>;
 			no-map;
@@ -1092,6 +1106,11 @@
 &remoteproc_adsp {
 	status = "okay";
 	firmware-name = "qcom/sm8450/cupid/adsp.mbn";
+};
+
+&{/soc@0/remoteproc@3000000/glink-edge/fastrpc} {
+	memory-region = <&adsp_rpc_remote_heap_mem>;
+	qcom,vmids = <QCOM_SCM_VMID_LPASS QCOM_SCM_VMID_ADSP_HEAP>;
 };
 
 &remoteproc_cdsp {

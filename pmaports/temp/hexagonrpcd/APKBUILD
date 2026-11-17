@@ -1,0 +1,61 @@
+# Contributor: Dylan Van Assche <dylan@postmarketos.org>
+# Maintainer: Dylan Van Assche <dylan@postmarketos.org>
+pkgname=hexagonrpcd
+pkgver=0.4.0
+pkgrel=100
+# cupid-linux overlay of Alpine's community/hexagonrpcd 0.4.0-r3: adds -a,
+# the ADSP's static audio PD, which loads the voice ECNS module
+# (docs/09-call-audio.md). The unit is not enabled by default.
+pkgdesc="Qualcomm HexagonFS daemon"
+url="https://github.com/linux-msm/hexagonrpc"
+# s390x: fails on 1 test. Hexagonrpcd is specific to Qualcomm ARM SoCs, so let's ignore it for now.
+arch="all !s390x"
+license="GPL-3.0-or-later"
+makedepends="linux-headers meson"
+install="$pkgname.pre-install"
+subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd $pkgname-udev"
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/linux-msm/hexagonrpc/archive/refs/tags/v$pkgver.tar.gz
+	10-fastrpc.rules
+	$pkgname-adsp-rootpd.initd
+	$pkgname-adsp-sensorspd.initd
+	$pkgname-sdsp.initd
+	systemd-services.patch
+	0100-rpcd-create-the-static-audio-pd.patch
+	hexagonrpcd-adsp-audiopd.service
+	"
+builddir="$srcdir/hexagonrpc-$pkgver"
+
+build() {
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+check() {
+	meson test -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	# Allow access for FastRPC node for FastRPC user/group
+	install -Dm644 "$srcdir"/10-fastrpc.rules -t "$pkgdir"/usr/lib/udev/rules.d/
+
+	install -Dm755 "$srcdir"/$pkgname-adsp-rootpd.initd "$pkgdir"/etc/init.d/$pkgname-adsp-rootpd
+	install -Dm755 "$srcdir"/$pkgname-adsp-sensorspd.initd "$pkgdir"/etc/init.d/$pkgname-adsp-sensorspd
+	install -Dm755 "$srcdir"/$pkgname-sdsp.initd "$pkgdir"/etc/init.d/$pkgname-sdsp
+	install -Dm644 "$srcdir"/$pkgname-adsp-audiopd.service \
+		-t "$pkgdir"/usr/lib/systemd/system/
+}
+
+
+sha512sums="
+18ebe4beeed97018243bec5043b8395c07c76f1174085e41a32648fd481485076fefffa091700ca1f72163687405456e5537aa538bc4f08fecacb3f83e3a82d8  hexagonrpcd-0.4.0.tar.gz
+f931cf5f901a7c17ffb0eb194b5de2c532fd238692898bf264c484b13b93119c9727bd8f8daf6a7d1668cc9108a9a0662231d300c6f1376e3e4edd3ce41d235d  10-fastrpc.rules
+934fda348f8b8896d15fa892e81e6dea022144c9bfcb557c0938898ac452ee3ab6a39f7ceaa54ede2ea78711f3516375c01746f8c55d1acec5ec1f1d9c9f816b  hexagonrpcd-adsp-rootpd.initd
+429f4f76e527b4289f95628603e4cee8b8d048d9a2a594ee367e5765b7554f494848c1f1aa0a7da84c193a698cd885e9325323fb6239293f1718775015cd3df0  hexagonrpcd-adsp-sensorspd.initd
+c88d3a813aa92298c3585c33111389c7175c67240497f2aeeb413228ccd8b991ed2e5edd2ffd4603389cfc9c8af6dfc5cd4c94c9979919e3efdd5bd5f547c9bd  hexagonrpcd-sdsp.initd
+2ebd6709180f2c60e355770d091c61d95e012727c94101d5e3e451c91af43f4334ef02ebd85c8ad1f99d3adc7fcb27ff5db1afaeec71cddc638db95b626128ad  systemd-services.patch
+f79de6afa407584dbcf64c7a86d4fcce4eee4290fabc85f3d0ceb18da53f637747d83e31ee85736a3fc52b44618460d8bf280adc5d55c61a5e77a20cfc3540df  0100-rpcd-create-the-static-audio-pd.patch
+015b01e537d1fbb0fb897f95ee29c1668ff600376263a3488908a74dd21c78c6c50e4d551b6368d3154910f0bc516e58520f986328509c1abd6732a025b5246c  hexagonrpcd-adsp-audiopd.service
+"
