@@ -127,10 +127,13 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   `voicecall.py start|stop <dir>` sends them on the phone. `no-ecns`
   removes the ECNS module from the TX processing subgraph (mic chain
   0x41a1 straight to 0x41a3, AVC sink 0x41a4 dropped). `fit` keeps only the
-  LTE and 16 kHz calibration entries: GPR sends with `rpmsg_trysend`, so a
-  command larger than the ADSP's 4 KiB receive buffers (about 4040 bytes)
-  fails with `EBUSY`; `fit=RATE` picks the rate (default 32000, EVS
-  super-wideband as negotiated in tests).
+  LTE entries for one sample rate (`fit=RATE`, default 32000, EVS
+  super-wideband as negotiated in tests). Needed before kernel r19: GPR
+  sent with `rpmsg_trysend`, so a command larger than the ADSP's 4 KiB
+  receive buffers (about 4040 bytes) failed with `EBUSY`. From r19
+  (patch 0041) `q6apm_raw` sends with `gpr_send_pkt_sleep()`, which lets
+  glink request a large enough buffer, so the full tables (up to 16 KiB)
+  go through and `fit` is unnecessary.
 - `voicecall.py keys <dir>` (during a call) reads
   `VCPM_PARAM_ID_ACTIVE_CAL_KEYS` per subgraph: vocoder class, sample rate
   and network appear once the modem has started the vocoder.
@@ -169,10 +172,9 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   and the far end heard at most "something very quiet" of the beeps. The
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
-- Next: a call with the stock graphs (ECNS included) and the 32 kHz tables
-  (`fit`, now the default rate) and louder beeps; then full-size
-  calibration (blocking `rpmsg_send` for large packets, or shared memory as
-  GSL does) and the kernel voice front end.
+- Next: a call with the stock graphs (ECNS included) and the full
+  calibration tables (kernel r19), louder beeps; then the kernel voice
+  front end.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
   (`/org/freedesktop/ModemManager1/Call/N`, the short form crashes mmcli).
