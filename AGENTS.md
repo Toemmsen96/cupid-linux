@@ -27,10 +27,13 @@ postmarketOS (and an Arch Linux ARM variant) for the Xiaomi 12 "cupid"
 - **The test phone's SIM is prepaid.** Never download or run speed tests
   over mobile data. Before the phone fetches anything (apk, abuild sources),
   check that its default route is `wlan0`.
-- **Builds:** package updates are built on the phone with
-  `scripts/phone-build.sh [-i] PKG...` (native abuild, no host sudo). Do not
-  ask the developer to build packages. pmbootstrap (`scripts/build.sh`,
-  `scripts/pmb`) needs the developer's sudo and is only for full images.
+- **Builds:** kernels are built on the host with pmbootstrap, which needs
+  the developer's sudo: hand them `scripts/sync.sh` and `scripts/pmb build
+  --arch aarch64 <pkg>`, then install the result over SSH. On the phone a
+  kernel takes about an hour because it throttles at 85-95 °C. Small
+  packages (device package, scripts) can be built on the phone with
+  `scripts/phone-build.sh [-i] PKG...` (native abuild, no host sudo). Full
+  images: `scripts/build.sh`.
 - Anything that can reboot or hang the phone (TrustZone calls, modem
   configuration, flashing) runs only when no other test is in progress on
   the phone, and is announced first.

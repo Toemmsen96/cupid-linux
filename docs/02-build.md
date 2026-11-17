@@ -48,9 +48,10 @@ kernel next` and `scripts/pmb config ui phosh` work as well.
 Package updates for a running phone can be built on the phone itself with
 `abuild`, without pmbootstrap and without root on the host:
 `scripts/phone-build.sh [-i] PACKAGE...` copies the package directories over
-SSH, builds them there (the kernel takes about half an hour) and with `-i`
+SSH, builds them there and with `-i`
 installs them (a kernel package flashes the boot partition; reboot to use
-it). The one-time setup on the phone is in the script's header. The phone
+it). Meant for small packages: a kernel takes about an hour there, as the
+phone throttles to a fraction of its clock under a sustained full load. The one-time setup on the phone is in the script's header. The phone
 downloads sources and build dependencies itself, so keep it on Wi-Fi.
 
 ## Editing packages
