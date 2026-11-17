@@ -28,7 +28,7 @@ firmware DIR OUT
     Pack a built DIR into the firmware file of the kernel's voice call
     front end (0042, "Voice Call Switch"): magic "QAPMVC01", then records
     {u32 type, u32 len, data, padded to 4}: NEED_SG (the Linux backend
-    subgraphs, LINUX_SGS), BLOB (DIR/cal tables for shared memory),
+    subgraphs, LINUX_BACKEND_SGS), BLOB (DIR/cal tables for shared memory),
     START/STOP ([u32 opcode][payload]) and START_OOB/STOP_OOB
     ([u32 opcode][u32 blob index]). It holds stock calibration: generate it
     on the phone, never commit it.
@@ -70,6 +70,10 @@ GKV = {
 # handset microphone backend (codec DMA TX3 0x43af -> log 0x4147 ->
 # splitter 0x4167). Linux streams keep them running.
 LINUX_SGS = {0xB0000002, 0xB0000039}
+# The same backends' subgraph IDs in the Linux topology (Xiaomi-12.m4:
+# TERTIARY_TDM_RX_0 and TX_CODEC_DMA_TX_3): the kernel front end starts the
+# voice graphs once these run.
+LINUX_BACKEND_SGS = {0x00004005, 0x00004009}
 
 def pad8(b):
     return b + b"\0" * (-len(b) % 8)
@@ -370,7 +374,7 @@ def firmware(d, out):
     def rec(kind, data):
         return struct.pack("<II", QVC[kind], len(data)) + data + b"\0" * (-len(data) % 4)
 
-    fw = b"QAPMVC01" + b"".join(rec("need", struct.pack("<I", sg)) for sg in sorted(LINUX_SGS))
+    fw = b"QAPMVC01" + b"".join(rec("need", struct.pack("<I", sg)) for sg in sorted(LINUX_BACKEND_SGS))
     blobs = {}
     cal = os.path.join(d, "cal")
     if os.path.isdir(cal):

@@ -147,9 +147,12 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   a built directory (it contains stock calibration, so it is generated on
   the phone into `/lib/firmware/updates/`, never committed). With the
   switch on, the kernel starts the voice graphs as soon as the speaker and
-  microphone backend subgraphs (0xb0000002, 0xb0000039) run, i.e. while a
+  microphone backend subgraphs of the Linux topology (0x4005 tertiary TDM,
+  0x4009 codec DMA TX3) run, i.e. while a
   playback and a capture stream are open, and stops them before either
-  backend stops or when the switch goes off.
+  backend stops or when the switch goes off. Verified on r21 without a
+  call: start, stop when the streams close, restart when they reopen, stop
+  on switch off.
 - `voicecall.py keys <dir>` (during a call) reads
   `VCPM_PARAM_ID_ACTIVE_CAL_KEYS` per subgraph: vocoder class, sample rate
   and network appear once the modem has started the vocoder.
@@ -188,8 +191,7 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   and the far end heard at most "something very quiet" of the beeps. The
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
-- Next: test the kernel front end (r21) without a call, then a call with
-  it (stock graphs with ECNS, full calibration), louder beeps; then a UCM
+- Next: a call with the kernel front end (stock graphs with ECNS, full calibration), louder beeps; then a UCM
   "Voice Call" verb that sets the switch, and a service that generates
   the firmware file from the phone's own vendor partition.
 - Practical notes: without a login, ModemManager voice calls need root
