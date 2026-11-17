@@ -138,6 +138,8 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   without `fit`, `build` writes the tables to `DIR/cal/` and `start` maps
   the buffer (`APM_CMD_SHARED_MEM_MAP_REGIONS`), copies them in and sends
   header-only `REGISTER_CFG` commands; `stop` deregisters and unmaps.
+  Verified on r20: all five full tables (0x44 16 KiB, 0x3e 12 KiB)
+  register with status 0 and the stock graphs including ECNS start.
 - `voicecall.py keys <dir>` (during a call) reads
   `VCPM_PARAM_ID_ACTIVE_CAL_KEYS` per subgraph: vocoder class, sample rate
   and network appear once the modem has started the vocoder.
@@ -177,7 +179,8 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
 - Next: a call with the stock graphs (ECNS included) and the full
-  calibration tables (kernel r20, shared memory), louder beeps; then the kernel voice
+  calibration tables (kernel r20, shared memory, verified without a call;
+  `~/vt`-style command set from `build ... handset`), louder beeps; then the kernel voice
   front end.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
