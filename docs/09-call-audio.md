@@ -94,6 +94,24 @@ first audio.
    calibration key.
 4. Prepare and start all subgraphs.
 
+## Bring-up tooling
+
+- Kernel patch 0040 (r17) adds `/sys/kernel/debug/q6apm_raw`: write
+  `[u32 opcode][payload]`, read back `[u32 response opcode][payload]`.
+- The topology's speaker backend is `SAL 0x4012 -> MFC 0x48ba -> TDM sink
+  0x428f`, stock's module instance IDs, so the voice RX graph connects to
+  it (SAL ports 0x20/0x22 handset, 0xc/0x10 speaker) and its control links
+  to the TDM sink resolve. A Linux playback stream (silence) keeps the
+  backend, its clocks and the amplifiers running.
+- `scripts/voicecall/voicecall.py build <acdb> scripts/acdb/names.json <dir>
+  [handset|speaker] [rx-only]` turns the ACDB graphs into command files
+  (graph open with the stock subgraph data, which already carries the
+  VCPM voice configuration; module calibration; VCPM VSID and TX channel
+  info; prepare; start); `voicecall.py start|stop <dir>` sends them on the
+  phone. The TX device subgraph (codec DMA TX3) is opened by the tool, not
+  by Linux, so the microphone path has to be powered without a Linux
+  capture stream on that backend.
+
 Mainline AudioReach is missing: the VSID subgraph property (topology token +
 graph setup), module control links, arbitrary port IDs, a way to pass raw
 parameters such as the VCPM voice config at graph open, and a data-less
