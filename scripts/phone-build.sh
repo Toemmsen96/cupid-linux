@@ -28,7 +28,13 @@ for pkg in "$@"; do
 	echo "== $pkg"
 	tar c -C "$(dirname "$d")" "$pkg" | ssh "$PHONE" \
 		"mkdir -p ~/aports && cd ~/aports && rm -rf '$pkg' && tar x"
-	ssh "$PHONE" "cd ~/aports/'$pkg' && abuild -r > ~/build-'$pkg'.log 2>&1" || {
+	# A system unit, not the SSH session: logind kills a session's
+	# processes when it ends, so a dropped connection would end the build.
+	# --wait still reports the result here.
+	ssh "$PHONE" 'sudo systemd-run --quiet --wait --collect --unit="cupid-build-'"$pkg"'" \
+		--uid="$(id -u)" --gid="$(id -g)" --setenv=HOME="$HOME" \
+		--working-directory="$HOME/aports/'"$pkg"'" \
+		nice sh -c "abuild -r > \"$HOME/build-'"$pkg"'.log\" 2>&1"' || {
 		ssh "$PHONE" "tail -30 ~/build-'$pkg'.log"
 		echo "$pkg failed, log: ~/build-$pkg.log on the phone" >&2
 		exit 1
