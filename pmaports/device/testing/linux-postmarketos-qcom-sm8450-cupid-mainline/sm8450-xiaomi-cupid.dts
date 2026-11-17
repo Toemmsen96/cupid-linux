@@ -1108,6 +1108,15 @@
 	firmware-name = "qcom/sm8450/cupid/adsp.mbn";
 };
 
+/*
+ * Voice call DSP command sequence for the q6apm voice front end (0042),
+ * generated on the phone from its calibration database into
+ * /lib/firmware/updates by cupid-voice-firmware.
+ */
+&q6apm {
+	firmware-name = "qcom/sm8450/Xiaomi-12-voice.bin";
+};
+
 &{/soc@0/remoteproc@3000000/glink-edge/fastrpc} {
 	memory-region = <&adsp_rpc_remote_heap_mem>;
 	qcom,vmids = <QCOM_SCM_VMID_LPASS QCOM_SCM_VMID_ADSP_HEAP>;

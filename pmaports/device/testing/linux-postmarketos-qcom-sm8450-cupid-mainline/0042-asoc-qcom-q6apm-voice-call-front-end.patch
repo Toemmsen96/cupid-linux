@@ -1,0 +1,626 @@
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Subject: [PATCH] ASoC: qcom: q6apm: voice call front end
+
+Voice calls on AudioReach run entirely on the ADSP: the modem exchanges
+voice packets with it, VCPM (the voice call proxy manager) runs the voice
+graphs. Linux has to open those graphs, give VCPM its parameters and
+calibration, and start them, connected to the Linux speaker and
+microphone backends. The topology cannot describe them (VSID subgraph
+property, control links, arbitrary ports, VCPM parameters and
+out-of-band calibration at open).
+
+This adds a "Voice Call Switch" control when the q6apm node has a
+firmware-name: a file with the DSP command sequence (start and stop
+commands, shared-memory blobs such as the VCPM calibration tables, and
+the backend subgraphs the graphs need), built from the device's
+calibration database. With the switch on, the start sequence runs once
+all those backend subgraphs run (a playback and capture stream keep them
+up during a call); before one of them stops, or when the switch goes
+off, the stop sequence runs. q6apm_graph_start/stop keep count of the
+running subgraphs for this. Commands go through the raw path of 0040,
+out-of-band payloads through the shared memory of 0041.
+---
+--- a/sound/soc/qcom/qdsp6/q6apm.c
++++ b/sound/soc/qcom/qdsp6/q6apm.c
+@@ -5,6 +5,9 @@
+ #include <linux/debugfs.h>
+ #include <linux/delay.h>
+ #include <linux/dma-mapping.h>
++#include <linux/firmware.h>
++#include <linux/unaligned.h>
++#include <linux/xarray.h>
+ #include <linux/jiffies.h>
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+@@ -830,6 +833,10 @@
+ }
+ EXPORT_SYMBOL_GPL(q6apm_graph_prepare);
+ 
++static void q6apm_voice_graph_started(struct q6apm *apm, struct audioreach_graph_info *info);
++static void q6apm_voice_graph_stopping(struct q6apm *apm, struct audioreach_graph_info *info);
++static int q6apm_voice_add_controls(struct snd_soc_component *component);
++
+ int q6apm_graph_start(struct q6apm_graph *graph)
+ {
+ 	struct audioreach_graph *ar_graph = graph->ar_graph;
+@@ -839,6 +846,7 @@
+ 		ret = audioreach_graph_mgmt_cmd(ar_graph, APM_CMD_GRAPH_START);
+ 		if (ret)
+ 			return ret;
++		q6apm_voice_graph_started(graph->apm, graph->info);
+ 	}
+ 
+ 	ar_graph->start_count++;
+@@ -857,6 +865,8 @@
+ 	if (--ar_graph->start_count > 0)
+ 		return 0;
+ 
++	q6apm_voice_graph_stopping(graph->apm, graph->info);
++
+ 	return audioreach_graph_mgmt_cmd(ar_graph, APM_CMD_GRAPH_STOP);
+ }
+ EXPORT_SYMBOL_GPL(q6apm_graph_stop);
+@@ -869,7 +879,13 @@
+ 
+ static int q6apm_audio_probe(struct snd_soc_component *component)
+ {
+-	return audioreach_tplg_init(component);
++	int ret;
++
++	ret = audioreach_tplg_init(component);
++	if (ret)
++		return ret;
++
++	return q6apm_voice_add_controls(component);
+ }
+ 
+ static void q6apm_audio_remove(struct snd_soc_component *component)
+@@ -911,13 +927,43 @@
+  */
+ #define Q6APM_RAW_TOKEN		0x52415721
+ 
++/*
++ * Send [u32 opcode][payload] to the APM and wait for the response, which is
++ * left in raw_rsp*. Caller holds raw_lock.
++ */
++static int q6apm_raw_send(struct q6apm *apm, const void *buf, size_t len)
++{
++	struct gpr_pkt *pkt;
++	int ret;
++
++	lockdep_assert_held(&apm->raw_lock);
++
++	if (len < sizeof(u32))
++		return -EINVAL;
++
++	pkt = audioreach_alloc_apm_pkt(len - sizeof(u32), get_unaligned_le32(buf),
++				       Q6APM_RAW_TOKEN, GPR_APM_MODULE_IID);
++	if (IS_ERR(pkt))
++		return PTR_ERR(pkt);
++	memcpy((void *)pkt + GPR_HDR_SIZE, buf + sizeof(u32), len - sizeof(u32));
++
++	apm->raw_done = false;
++	apm->raw_rsp_len = 0;
++	apm->raw_rsp_opcode = 0;
++	ret = gpr_send_pkt(apm->gdev, pkt);
++	if (ret >= 0)
++		ret = wait_event_timeout(apm->raw_wait, apm->raw_done, 5 * HZ) ?
++		      0 : -ETIMEDOUT;
++	kfree(pkt);
++
++	return ret;
++}
++
+ static ssize_t q6apm_raw_write(struct file *file, const char __user *ubuf,
+ 			       size_t count, loff_t *ppos)
+ {
+ 	struct q6apm *apm = file->private_data;
+-	struct gpr_pkt *pkt;
+ 	void *buf;
+-	u32 opcode;
+ 	int ret;
+ 
+ 	if (count < sizeof(u32) || count > SZ_64K)
+@@ -927,31 +973,12 @@
+ 	if (IS_ERR(buf))
+ 		return PTR_ERR(buf);
+ 
+-	opcode = *(u32 *)buf;
+-	pkt = audioreach_alloc_apm_pkt(count - sizeof(u32), opcode,
+-				       Q6APM_RAW_TOKEN, GPR_APM_MODULE_IID);
+-	if (IS_ERR(pkt)) {
+-		kfree(buf);
+-		return PTR_ERR(pkt);
+-	}
+-	memcpy((void *)pkt + GPR_HDR_SIZE, buf + sizeof(u32), count - sizeof(u32));
+-	kfree(buf);
+-
+ 	mutex_lock(&apm->raw_lock);
+-	apm->raw_done = false;
+-	apm->raw_rsp_len = 0;
+-	apm->raw_rsp_opcode = 0;
+-	ret = gpr_send_pkt(apm->gdev, pkt);
+-	if (ret >= 0) {
+-		if (!wait_event_timeout(apm->raw_wait, apm->raw_done, 5 * HZ))
+-			ret = -ETIMEDOUT;
+-		else
+-			ret = count;
+-	}
++	ret = q6apm_raw_send(apm, buf, count);
+ 	mutex_unlock(&apm->raw_lock);
+-	kfree(pkt);
++	kfree(buf);
+ 
+-	return ret;
++	return ret ? ret : count;
+ }
+ 
+ static ssize_t q6apm_raw_read(struct file *file, char __user *ubuf,
+@@ -1090,6 +1117,433 @@
+ 	.llseek = default_llseek,
+ };
+ 
++/*
++ * Voice call front end. The voice call graphs run entirely on the ADSP
++ * (the modem exchanges voice packets with it directly); Linux opens them,
++ * hands VCPM its parameters and calibration, and starts them. The topology
++ * cannot describe them (VSID subgraph property, control links, arbitrary
++ * ports, VCPM parameters at open), so the DSP command sequence comes from a
++ * firmware file named by the q6apm node's firmware-name, built from the
++ * device's calibration database:
++ *
++ *   char magic[8] = "QAPMVC01", then records of
++ *   { __le32 type; __le32 len; u8 data[len]; padded to 4 bytes }:
++ *   NEED_SG    __le32 subgraph: a Linux backend subgraph the voice graphs
++ *              connect to; it must be running before they open
++ *   BLOB       payload copied to shared memory (64-byte aligned, in order)
++ *   START/STOP __le32 opcode, in-band payload
++ *   START_OOB/STOP_OOB __le32 opcode, __le32 blob index: the command with
++ *              the blob as out-of-band payload (e.g. calibration tables
++ *              over the ADSP's 4 KiB in-band limit)
++ *
++ * "Voice Call Switch" on: the START commands run once all NEED_SG
++ * subgraphs run (a Linux playback and capture keep them up during a call).
++ * Off, or a NEED_SG subgraph about to stop: the STOP commands run.
++ */
++#define QVC_MAGIC		"QAPMVC01"
++#define QVC_NEED_SG		1
++#define QVC_BLOB		2
++#define QVC_START		3
++#define QVC_START_OOB		4
++#define QVC_STOP		5
++#define QVC_STOP_OOB		6
++#define QVC_BLOB_ALIGN		64
++
++struct qvc_rec {
++	__le32 type;
++	__le32 len;
++	u8 data[];
++} __packed;
++
++static const struct qvc_rec *qvc_next(const struct firmware *fw, size_t *pos)
++{
++	const struct qvc_rec *rec;
++
++	if (*pos + sizeof(*rec) > fw->size)
++		return NULL;
++	rec = (const void *)fw->data + *pos;
++	*pos += sizeof(*rec) + ALIGN(le32_to_cpu(rec->len), 4);
++	return rec;
++}
++
++/* Offset in shared memory and record of blob @idx */
++static const struct qvc_rec *qvc_blob(const struct firmware *fw, u32 idx, size_t *off)
++{
++	const struct qvc_rec *rec;
++	size_t pos = sizeof(QVC_MAGIC) - 1;
++	u32 n = 0;
++
++	*off = 0;
++	while ((rec = qvc_next(fw, &pos))) {
++		if (le32_to_cpu(rec->type) != QVC_BLOB)
++			continue;
++		if (n++ == idx)
++			return rec;
++		*off += ALIGN(le32_to_cpu(rec->len), QVC_BLOB_ALIGN);
++	}
++	return NULL;
++}
++
++static int qvc_validate(struct device *dev, const struct firmware *fw)
++{
++	size_t pos = sizeof(QVC_MAGIC) - 1, shm = 0;
++	const struct qvc_rec *rec;
++	u32 blobs = 0, type, len;
++
++	if (fw->size < pos || memcmp(fw->data, QVC_MAGIC, pos))
++		goto bad;
++
++	while (pos < fw->size) {
++		if (pos + sizeof(*rec) > fw->size)
++			goto bad;
++		rec = (const void *)fw->data + pos;
++		type = le32_to_cpu(rec->type);
++		len = le32_to_cpu(rec->len);
++		if (len > fw->size - pos - sizeof(*rec))
++			goto bad;
++		switch (type) {
++		case QVC_NEED_SG:
++			if (len != sizeof(u32))
++				goto bad;
++			break;
++		case QVC_BLOB:
++			shm += ALIGN(len, QVC_BLOB_ALIGN);
++			blobs++;
++			break;
++		case QVC_START:
++		case QVC_STOP:
++			if (len < sizeof(u32) || len > SZ_4K)
++				goto bad;
++			break;
++		case QVC_START_OOB:
++		case QVC_STOP_OOB:
++			if (len != 2 * sizeof(u32))
++				goto bad;
++			break;
++		default:
++			goto bad;
++		}
++		qvc_next(fw, &pos);
++	}
++
++	/* blob indices refer to earlier or later blobs: check once all are known */
++	pos = sizeof(QVC_MAGIC) - 1;
++	while ((rec = qvc_next(fw, &pos))) {
++		type = le32_to_cpu(rec->type);
++		if ((type == QVC_START_OOB || type == QVC_STOP_OOB) &&
++		    get_unaligned_le32(rec->data + 4) >= blobs)
++			goto bad;
++	}
++
++	if (shm > Q6APM_RAW_SHM_SIZE) {
++		dev_err(dev, "voice firmware: %zu bytes of blobs, shared memory has %u\n",
++			shm, Q6APM_RAW_SHM_SIZE);
++		return -EFBIG;
++	}
++	return 0;
++bad:
++	dev_err(dev, "voice firmware: invalid at offset %zu\n", pos);
++	return -EINVAL;
++}
++
++/* Send one command through the raw path (raw_lock held); 0 if the APM accepted it */
++static int q6apm_voice_cmd(struct q6apm *apm, const void *buf, size_t len)
++{
++	u32 opcode = get_unaligned_le32(buf);
++	int ret;
++
++	ret = q6apm_raw_send(apm, buf, len);
++	if (ret)
++		return ret;
++
++	if (apm->raw_rsp_opcode != GPR_BASIC_RSP_RESULT || apm->raw_rsp_len < 8) {
++		dev_err(apm->dev, "voice: 0x%08x: response 0x%08x\n", opcode,
++			apm->raw_rsp_opcode);
++		return -EIO;
++	}
++	ret = get_unaligned_le32(apm->raw_rsp + 4);
++	if (ret) {
++		dev_err(apm->dev, "voice: 0x%08x failed: status 0x%x\n", opcode, ret);
++		return -EIO;
++	}
++	return 0;
++}
++
++static int q6apm_voice_run(struct q6apm *apm, u32 inband, u32 oob, bool stop_on_error)
++{
++	const struct firmware *fw = apm->voice_fw;
++	size_t pos = sizeof(QVC_MAGIC) - 1, off;
++	const struct qvc_rec *rec, *blob;
++	int ret, err = 0;
++	__le32 hdr[5];
++	u32 type;
++
++	while ((rec = qvc_next(fw, &pos))) {
++		type = le32_to_cpu(rec->type);
++		if (type == inband) {
++			ret = q6apm_voice_cmd(apm, rec->data, le32_to_cpu(rec->len));
++		} else if (type == oob) {
++			blob = qvc_blob(fw, get_unaligned_le32(rec->data + 4), &off);
++			hdr[0] = cpu_to_le32(get_unaligned_le32(rec->data));
++			hdr[1] = cpu_to_le32(lower_32_bits(apm->raw_shm_addr + off));
++			hdr[2] = cpu_to_le32(upper_32_bits(apm->raw_shm_addr + off));
++			hdr[3] = cpu_to_le32(apm->voice_shm_handle);
++			hdr[4] = blob->len;
++			ret = q6apm_voice_cmd(apm, hdr, sizeof(hdr));
++		} else {
++			continue;
++		}
++		if (ret && stop_on_error)
++			return ret;
++		err = err ?: ret;
++	}
++	return err;
++}
++
++static int q6apm_voice_shm_map(struct q6apm *apm)
++{
++	struct {
++		__le32 opcode;
++		struct apm_cmd_shared_mem_map_regions cmd;
++		struct apm_shared_map_region_payload region;
++	} __packed map = {
++		.opcode = cpu_to_le32(APM_CMD_SHARED_MEM_MAP_REGIONS),
++		.cmd.mem_pool_id = APM_MEMORY_MAP_SHMEM8_4K_POOL,
++		.cmd.num_regions = 1,
++		.region.mem_size_bytes = Q6APM_RAW_SHM_SIZE,
++	};
++	int ret;
++
++	if (apm->voice_shm_handle)
++		return 0;
++
++	ret = q6apm_raw_shm_alloc(apm);
++	if (ret)
++		return ret;
++
++	map.region.shm_addr_lsw = lower_32_bits(apm->raw_shm_addr);
++	map.region.shm_addr_msw = upper_32_bits(apm->raw_shm_addr);
++	ret = q6apm_raw_send(apm, &map, sizeof(map));
++	if (ret)
++		return ret;
++	if (apm->raw_rsp_opcode != APM_CMD_RSP_SHARED_MEM_MAP_REGIONS ||
++	    apm->raw_rsp_len < 4) {
++		dev_err(apm->dev, "voice: shared memory map failed (0x%08x)\n",
++			apm->raw_rsp_opcode);
++		return -EIO;
++	}
++	apm->voice_shm_handle = get_unaligned_le32(apm->raw_rsp);
++	return 0;
++}
++
++static void q6apm_voice_shm_unmap(struct q6apm *apm)
++{
++	__le32 cmd[2] = {
++		cpu_to_le32(APM_CMD_SHARED_MEM_UNMAP_REGIONS),
++		cpu_to_le32(apm->voice_shm_handle),
++	};
++
++	if (!apm->voice_shm_handle)
++		return;
++	mutex_lock(&apm->raw_lock);
++	q6apm_voice_cmd(apm, cmd, sizeof(cmd));
++	mutex_unlock(&apm->raw_lock);
++	apm->voice_shm_handle = 0;
++}
++
++static bool q6apm_voice_ready(struct q6apm *apm)
++{
++	size_t pos = sizeof(QVC_MAGIC) - 1;
++	const struct qvc_rec *rec;
++
++	while ((rec = qvc_next(apm->voice_fw, &pos)))
++		if (le32_to_cpu(rec->type) == QVC_NEED_SG &&
++		    !xa_load(&apm->started_sgs, get_unaligned_le32(rec->data)))
++			return false;
++	return true;
++}
++
++/* voice_lock held */
++static void q6apm_voice_stop(struct q6apm *apm)
++{
++	if (!apm->voice_running)
++		return;
++
++	mutex_lock(&apm->raw_lock);
++	if (q6apm_voice_run(apm, QVC_STOP, QVC_STOP_OOB, false))
++		dev_warn(apm->dev, "voice: stop sequence had errors\n");
++	mutex_unlock(&apm->raw_lock);
++	apm->voice_running = false;
++	dev_info(apm->dev, "voice call graphs stopped\n");
++}
++
++/* voice_lock held */
++static void q6apm_voice_start(struct q6apm *apm)
++{
++	size_t pos = sizeof(QVC_MAGIC) - 1, off = 0;
++	const struct qvc_rec *rec;
++	int ret;
++
++	if (!apm->voice_enabled || apm->voice_running || !apm->voice_fw ||
++	    !q6apm_voice_ready(apm))
++		return;
++
++	mutex_lock(&apm->raw_lock);
++	ret = q6apm_voice_shm_map(apm);
++	if (!ret) {
++		while ((rec = qvc_next(apm->voice_fw, &pos))) {
++			if (le32_to_cpu(rec->type) != QVC_BLOB)
++				continue;
++			memcpy(apm->raw_shm + off, rec->data, le32_to_cpu(rec->len));
++			off += ALIGN(le32_to_cpu(rec->len), QVC_BLOB_ALIGN);
++		}
++		ret = q6apm_voice_run(apm, QVC_START, QVC_START_OOB, true);
++		if (ret)
++			q6apm_voice_run(apm, QVC_STOP, QVC_STOP_OOB, false);
++	}
++	mutex_unlock(&apm->raw_lock);
++
++	if (ret) {
++		dev_err(apm->dev, "voice: starting the call graphs failed (%d)\n", ret);
++		return;
++	}
++	apm->voice_running = true;
++	dev_info(apm->dev, "voice call graphs started\n");
++}
++
++static void q6apm_voice_work(struct work_struct *work)
++{
++	struct q6apm *apm = container_of(work, struct q6apm, voice_work);
++
++	mutex_lock(&apm->voice_lock);
++	q6apm_voice_start(apm);
++	mutex_unlock(&apm->voice_lock);
++}
++
++/* A graph started (start count 0 -> 1): count its subgraphs as running */
++static void q6apm_voice_graph_started(struct q6apm *apm, struct audioreach_graph_info *info)
++{
++	struct audioreach_sub_graph *sg;
++	unsigned long n;
++
++	if (!apm || !info)
++		return;
++
++	mutex_lock(&apm->voice_lock);
++	list_for_each_entry(sg, &info->sg_list, node) {
++		n = xa_to_value(xa_load(&apm->started_sgs, sg->sub_graph_id) ?: xa_mk_value(0));
++		xa_store(&apm->started_sgs, sg->sub_graph_id, xa_mk_value(n + 1), GFP_KERNEL);
++	}
++	if (apm->voice_enabled && !apm->voice_running)
++		schedule_work(&apm->voice_work);
++	mutex_unlock(&apm->voice_lock);
++}
++
++/* A graph is about to stop: the voice graphs go first if they need it */
++static void q6apm_voice_graph_stopping(struct q6apm *apm, struct audioreach_graph_info *info)
++{
++	struct audioreach_sub_graph *sg;
++	unsigned long n;
++
++	if (!apm || !info)
++		return;
++
++	mutex_lock(&apm->voice_lock);
++	list_for_each_entry(sg, &info->sg_list, node) {
++		n = xa_to_value(xa_load(&apm->started_sgs, sg->sub_graph_id) ?: xa_mk_value(1));
++		if (n > 1)
++			xa_store(&apm->started_sgs, sg->sub_graph_id, xa_mk_value(n - 1), GFP_KERNEL);
++		else
++			xa_erase(&apm->started_sgs, sg->sub_graph_id);
++	}
++	if (apm->voice_running && !q6apm_voice_ready(apm))
++		q6apm_voice_stop(apm);
++	mutex_unlock(&apm->voice_lock);
++}
++
++static int q6apm_voice_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
++{
++	struct snd_soc_component *c = snd_kcontrol_chip(kcontrol);
++	struct q6apm *apm = dev_get_drvdata(c->dev);
++
++	ucontrol->value.integer.value[0] = apm->voice_enabled;
++	return 0;
++}
++
++static int q6apm_voice_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
++{
++	struct snd_soc_component *c = snd_kcontrol_chip(kcontrol);
++	struct q6apm *apm = dev_get_drvdata(c->dev);
++	bool on = !!ucontrol->value.integer.value[0];
++	int ret = 0;
++
++	mutex_lock(&apm->voice_lock);
++	if (on == apm->voice_enabled)
++		goto out;
++
++	if (on) {
++		ret = request_firmware(&apm->voice_fw, apm->voice_fw_name, apm->dev);
++		if (!ret) {
++			ret = qvc_validate(apm->dev, apm->voice_fw);
++			if (ret) {
++				release_firmware(apm->voice_fw);
++				apm->voice_fw = NULL;
++			}
++		}
++		if (ret)
++			goto out;
++		apm->voice_enabled = true;
++		schedule_work(&apm->voice_work);
++	} else {
++		apm->voice_enabled = false;
++		q6apm_voice_stop(apm);
++		release_firmware(apm->voice_fw);
++		apm->voice_fw = NULL;
++	}
++	ret = 1;
++out:
++	mutex_unlock(&apm->voice_lock);
++	return ret;
++}
++
++static const struct snd_kcontrol_new q6apm_voice_controls[] = {
++	SOC_SINGLE_BOOL_EXT("Voice Call Switch", 0, q6apm_voice_get, q6apm_voice_put),
++};
++
++static void q6apm_voice_init(struct q6apm *apm)
++{
++	mutex_init(&apm->voice_lock);
++	INIT_WORK(&apm->voice_work, q6apm_voice_work);
++	xa_init(&apm->started_sgs);
++	if (of_property_read_string(apm->dev->of_node, "firmware-name",
++				    &apm->voice_fw_name))
++		apm->voice_fw_name = NULL;
++}
++
++static void q6apm_voice_exit(struct q6apm *apm)
++{
++	cancel_work_sync(&apm->voice_work);
++	mutex_lock(&apm->voice_lock);
++	apm->voice_enabled = false;
++	q6apm_voice_stop(apm);
++	q6apm_voice_shm_unmap(apm);
++	release_firmware(apm->voice_fw);
++	apm->voice_fw = NULL;
++	mutex_unlock(&apm->voice_lock);
++	xa_destroy(&apm->started_sgs);
++}
++
++static int q6apm_voice_add_controls(struct snd_soc_component *component)
++{
++	struct q6apm *apm = dev_get_drvdata(component->dev);
++
++	if (!apm->voice_fw_name)
++		return 0;
++
++	return snd_soc_add_component_controls(component, q6apm_voice_controls,
++					      ARRAY_SIZE(q6apm_voice_controls));
++}
++
+ static int apm_probe(gpr_device_t *gdev)
+ {
+ 	struct device *dev = &gdev->dev;
+@@ -1121,6 +1575,7 @@
+ 					      &q6apm_raw_fops);
+ 	apm->raw_shm_dentry = debugfs_create_file("q6apm_raw_shm", 0600, NULL,
+ 						  apm, &q6apm_raw_shm_fops);
++	q6apm_voice_init(apm);
+ 
+ 	g_apm = apm;
+ 
+@@ -1143,6 +1598,7 @@
+ {
+ 	struct q6apm *apm = dev_get_drvdata(&gdev->dev);
+ 
++	q6apm_voice_exit(apm);
+ 	debugfs_remove(apm->raw_shm_dentry);
+ 	debugfs_remove(apm->raw_dentry);
+ 	if (apm->raw_shm) {
+--- a/sound/soc/qcom/qdsp6/q6apm.h
++++ b/sound/soc/qcom/qdsp6/q6apm.h
+@@ -83,6 +83,15 @@
+ 	dma_addr_t raw_shm_dma;
+ 	u64 raw_shm_addr;
+ 	struct dentry *raw_shm_dentry;
++	/* Voice call front end */
++	struct mutex voice_lock;
++	struct work_struct voice_work;
++	const char *voice_fw_name;
++	const struct firmware *voice_fw;
++	bool voice_enabled;
++	bool voice_running;
++	u32 voice_shm_handle;
++	struct xarray started_sgs;	/* running subgraph id -> start count */
+ };
+ 
+ struct audio_buffer {

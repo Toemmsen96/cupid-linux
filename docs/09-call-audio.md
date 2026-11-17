@@ -140,6 +140,16 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   header-only `REGISTER_CFG` commands; `stop` deregisters and unmaps.
   Verified on r20: all five full tables (0x44 16 KiB, 0x3e 12 KiB)
   register with status 0 and the stock graphs including ECNS start.
+- Kernel voice front end (0042, kernel r21): a `Voice Call Switch`
+  control on the sound card, present when the q6apm node has a
+  `firmware-name` (cupid DTS: `qcom/sm8450/Xiaomi-12-voice.bin`). The file
+  holds the DSP command sequence: `voicecall.py firmware <dir> <out>` packs
+  a built directory (it contains stock calibration, so it is generated on
+  the phone into `/lib/firmware/updates/`, never committed). With the
+  switch on, the kernel starts the voice graphs as soon as the speaker and
+  microphone backend subgraphs (0xb0000002, 0xb0000039) run, i.e. while a
+  playback and a capture stream are open, and stops them before either
+  backend stops or when the switch goes off.
 - `voicecall.py keys <dir>` (during a call) reads
   `VCPM_PARAM_ID_ACTIVE_CAL_KEYS` per subgraph: vocoder class, sample rate
   and network appear once the modem has started the vocoder.
@@ -178,10 +188,10 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   and the far end heard at most "something very quiet" of the beeps. The
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
-- Next: a call with the stock graphs (ECNS included) and the full
-  calibration tables (kernel r20, shared memory, verified without a
-  call), louder beeps; then the kernel voice
-  front end.
+- Next: test the kernel front end (r21) without a call, then a call with
+  it (stock graphs with ECNS, full calibration), louder beeps; then a UCM
+  "Voice Call" verb that sets the switch, and a service that generates
+  the firmware file from the phone's own vendor partition.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
   (`/org/freedesktop/ModemManager1/Call/N`, the short form crashes mmcli).

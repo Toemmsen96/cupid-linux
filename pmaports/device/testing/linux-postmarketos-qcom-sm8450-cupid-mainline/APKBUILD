@@ -43,11 +43,13 @@
 # r20: 0041 q6apm_raw_shm, shared memory for raw APM commands: full-size
 # VCPM calibration tables (over 4 KiB; the ADSP takes in-band packets only
 # up to 4 KiB, which r19's waiting GPR send could not change).
+# r21: 0042 voice call front end ("Voice Call Switch", DSP command sequence
+# from firmware-name, set in the cupid DTS).
 # Keep stable/next as fallbacks: pmbootstrap config kernel next
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=20
+pkgrel=21
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -112,6 +114,7 @@ source="
 	0039-asoc-wcd-common-handle-alerts-without-a-regmap.patch
 	0040-asoc-qcom-q6apm-raw-apm-commands-through-debugfs.patch
 	0041-asoc-qcom-q6apm-shared-memory-for-raw-apm-commands.patch
+	0042-asoc-qcom-q6apm-voice-call-front-end.patch
 "
 builddir="$srcdir/linux-$pkgver"
 
@@ -153,7 +156,7 @@ package() {
 sha512sums="
 db5508c3cf8b613b4680022eb785c036bcf8a5c952f8d0b2f3c2c7dc16779cf8bd954e0bca0b0b52451bac61430a687ae73205574f002f3b60de886640ebb9b0  linux-7.3.4.tar.xz
 98ccae0887539f6e1b807b9dc5dde39a6a5eac5413f224d2b1c44ab788ba3ff50a7a741f43b05cd9797531c88bd172a824baf1910a0a410cb66e106d0681c29f  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
-219538df4dc919f767c4cbd05e1742ed62f6325ddde3463d3f025c7dae306f6cf4d28cf702f2b958fcbbc7f3cbf7c8c78714b3725ce6b601c53d45c1d2e50391  sm8450-xiaomi-cupid.dts
+96835b246221c0a7e464c86bab961554dc3eb91165371991c15e5eed37fb59a86cde09ecc41adb66f84b7da4be6f78a09aaeda7e1a116453dc3b60a55c1408cb  sm8450-xiaomi-cupid.dts
 f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd5d905d95de266a54eeb5ab88bd2924cd7e5878dbd4224096  fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
 05f0f5ffa8e5b42052f0ba05a99a463f857ba5c1283b45761cb2917ab6e7fd6d38a4ba7bc40578d7816bb020e2ff27083577c9fd89b454d1854bb32349beba8f  fork-0002-input-touchscreen-add-fts_spi-driver.patch
 258b8914f95d863dd6a58f73e153c0c805edc103e324c55439fd1d4c930fccc1e434c5a32a9ba50c06f44b2f5cbe1c5b7600744804efb8b1be2eb8e0f79f7e10  fork-0003-arm64-dts-qcom-sm8450-add-clock-names-to-mdss.patch
@@ -191,4 +194,5 @@ c223479cdb1e825b9fe8847a5f1dd37d7a851091bea61df5047d3aaa0fa97fd9eed3401af1253a94
 2a1c059b70979278f3bdce2ec33209d191f4f0e9277e98e8d03a6bd3a8e11d19b2d72ae95b37fc583ec36aa7b9332d00f4f0935f8d5a500468de7fd900f29495  0039-asoc-wcd-common-handle-alerts-without-a-regmap.patch
 59cfae4db71d2343f56006f84ec709cdbe6eb8601ab86135a6982f127d5d82ca1e3d4a11026e8eb3e86c72727f0b9e0f1da3422d6d703308895e318b94d2c74c  0040-asoc-qcom-q6apm-raw-apm-commands-through-debugfs.patch
 a487cd5b5948de16fa43551174bb451b7b4112ad2ae06f5b07cba44d2074168645b677cf1d2b51f46e7063bc4f84b5fe4c275b63a361c37826ad7a60794da45f  0041-asoc-qcom-q6apm-shared-memory-for-raw-apm-commands.patch
+dae124b43ea63e5e467f517d79ddae967f83fd1cd7bbfe0f5cd4d52a8f18e543934aeb0976ea0d4fb02ac09f4df2a79e123fa0807d4567fdcc18d896f9fa5b63  0042-asoc-qcom-q6apm-voice-call-front-end.patch
 "

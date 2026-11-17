@@ -24,6 +24,15 @@ start DIR / stop DIR
     (phone, root) Send DIR/start/* or DIR/stop/* in order through
     /sys/kernel/debug/q6apm_raw (kernel patch 0040) and print each result.
 
+firmware DIR OUT
+    Pack a built DIR into the firmware file of the kernel's voice call
+    front end (0042, "Voice Call Switch"): magic "QAPMVC01", then records
+    {u32 type, u32 len, data, padded to 4}: NEED_SG (the Linux backend
+    subgraphs, LINUX_SGS), BLOB (DIR/cal tables for shared memory),
+    START/STOP ([u32 opcode][payload]) and START_OOB/STOP_OOB
+    ([u32 opcode][u32 blob index]). It holds stock calibration: generate it
+    on the phone, never commit it.
+
 keys DIR
     (phone, root) Print the calibration keys VCPM has active for each voice
     subgraph of DIR (VCPM_PARAM_ID_ACTIVE_CAL_KEYS). Vocoder class, sample
@@ -354,6 +363,36 @@ def run(d, kind):
     return rc
 
 
+QVC = {"need": 1, "blob": 2, "start": 3, "start_oob": 4, "stop": 5, "stop_oob": 6}
+
+
+def firmware(d, out):
+    def rec(kind, data):
+        return struct.pack("<II", QVC[kind], len(data)) + data + b"\0" * (-len(data) % 4)
+
+    fw = b"QAPMVC01" + b"".join(rec("need", struct.pack("<I", sg)) for sg in sorted(LINUX_SGS))
+    blobs = {}
+    cal = os.path.join(d, "cal")
+    if os.path.isdir(cal):
+        for n in sorted(os.listdir(cal)):
+            blobs[int(n[:8], 16)] = len(blobs)
+            fw += rec("blob", open(os.path.join(cal, n), "rb").read())
+    for kind in ("start", "stop"):
+        for n in sorted(os.listdir(os.path.join(d, kind))):
+            data = open(os.path.join(d, kind, n), "rb").read()
+            if n.endswith(".oob"):
+                opcode, sg = struct.unpack("<II", data)
+                fw += rec(kind + "_oob", struct.pack("<II", opcode, blobs[sg]))
+            else:
+                if len(data) > 4096:
+                    raise SystemExit("%s: %d bytes, over the in-band limit" % (n, len(data)))
+                fw += rec(kind, data)
+    with open(out, "wb") as f:
+        f.write(fw)
+    print("%s: %d bytes, %d blobs" % (out, len(fw), len(blobs)))
+    return 0
+
+
 def main():
     if len(sys.argv) >= 5 and sys.argv[1] == "build":
         rx = "rx-" + (sys.argv[5] if len(sys.argv) > 5 else "handset")
@@ -362,6 +401,8 @@ def main():
               next((int(a[4:]) if a[4:] else 32000 for a in sys.argv[6:]
                     if a == "fit" or a.startswith("fit=")), None))
         return 0
+    if len(sys.argv) == 4 and sys.argv[1] == "firmware":
+        return firmware(sys.argv[2], sys.argv[3])
     if len(sys.argv) == 3 and sys.argv[1] == "keys":
         return keys(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] in ("start", "stop"):
