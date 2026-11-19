@@ -1,0 +1,593 @@
+From 661a13a4ee431f6a94dc06063df698d4c9813a32 Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 19:10:00 +0100
+Subject: [PATCH] media: i2c: imx766: bring up the module's BU24618 OIS
+
+The Xiaomi 12 main camera module carries a ROHM BU24618 optical image
+stabiliser at 0x3e on the sensor's CCI bus, with its calibration in the
+module EEPROM at 0x50. The controller is powered with the sensor but
+runs from RAM: until the host downloads its firmware, the servo is off
+and the lens rests off-centre. Images taken that way are measurably
+softer than with the servo holding the lens centred, and the frame
+shifts once it does.
+
+When the devicetree names "ois" and "eeprom" in reg-names, the driver
+registers ancillary clients for both and, at the first stream start of
+each power cycle, runs the stock bring-up: download start (0xf010), the
+three images from the vendor partition (program at 0x0000, coefficients
+at 0x1b40, memory at 0x4000; base name from firmware-name), the checksum
+at 0xf008 checked against their byte sum, 38 bytes of calibration from
+EEPROM 0x20f2 to 0x1dc0, download complete (0xf006), and the stock
+CamX post-init settings, waiting for the status register 0x6024 after
+each step. The ois_mode parameter then selects centring (default),
+stabilisation or servo off. This adds about 0.3 s to the first stream
+start after power-up.
+
+Messages are split to fit the adapter's quirks (the Qualcomm CCI takes
+at most 11 bytes per write, 12 per read). Everything about the OIS is
+optional: missing firmware is reported once, a failing step with a
+warning, and the sensor streams as before.
+
+Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+---
+ drivers/media/i2c/imx766.c | 496 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 496 insertions(+)
+
+diff --git a/drivers/media/i2c/imx766.c b/drivers/media/i2c/imx766.c
+index 773f849..380e001 100644
+--- a/drivers/media/i2c/imx766.c
++++ b/drivers/media/i2c/imx766.c
+@@ -7,15 +7,26 @@
+  * 2048x1536 (4x4 binned, for previews). The register
+  * sequences and the power sequence are those of the Xiaomi 12 main camera
+  * module (CamX sensor module com.qti.sensormodule.cupid_semco_imx766_wide).
++ *
++ * The module's ROHM BU24618 OIS controller is brought up at stream start
++ * when the devicetree describes it (see imx766_ois_start()).
+  */
+ #include <linux/clk.h>
+ #include <linux/delay.h>
++#include <linux/firmware.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/i2c.h>
++#include <linux/iopoll.h>
++#include <linux/ktime.h>
+ #include <linux/module.h>
++#include <linux/moduleparam.h>
+ #include <linux/pm_runtime.h>
++#include <linux/property.h>
+ #include <linux/regulator/consumer.h>
++#include <linux/slab.h>
++#include <linux/string.h>
+ #include <linux/units.h>
++#include <linux/unaligned.h>
+ #include <media/v4l2-cci.h>
+ #include <media/v4l2-ctrls.h>
+ #include <media/v4l2-fwnode.h>
+@@ -68,6 +79,97 @@
+ 
+ #define IMX766_MBUS_CODE		MEDIA_BUS_FMT_SBGGR10_1X10
+ 
++/*
++ * ROHM BU24618 optical image stabiliser of the module, at its own address
++ * on the sensor's bus ("ois" in reg-names). It runs from RAM: until the host
++ * has downloaded its program, coefficients and memory image, its servo is
++ * off and the lens rests off-centre, which blurs and shifts the image. The
++ * controller is powered with the sensor and loses its RAM with it, so the
++ * download runs once per power cycle, at stream start. The sequence
++ * follows Xiaomi's BU24618 driver; download addresses and settings are the
++ * stock CamX module's. Registers have 16-bit big-endian addresses and
++ * auto-increment.
++ */
++#define BU24618_REG_DL_START		0xf010	/* download start */
++#define BU24618_REG_DL_COMPLETE		0xf006	/* download complete */
++#define BU24618_REG_CHECKSUM		0xf008	/* 32-bit sum of the images */
++#define BU24618_REG_CAL			0x1dc0	/* calibration from the EEPROM */
++#define BU24618_REG_SERVO		0x6020	/* 0 off, 1 centred, 2 OIS */
++#define BU24618_REG_STATUS		0x6024
++#define BU24618_STATUS_READY		0x01
++#define BU24618_REG_GYRO_ADDR		0x602c	/* gyro access: address, ... */
++#define BU24618_READY_TIMEOUT_US	(100 * USEC_PER_MSEC)
++
++/* The OIS calibration in the module EEPROM ("eeprom", 16-bit addresses). */
++#define IMX766_EEPROM_OIS_CAL		0x20f2
++#define IMX766_OIS_CAL_LEN		38
++
++/* Base name of the images, ".prog", ".coeff" and ".mem" appended. */
++#define IMX766_OIS_FW_DEFAULT	"qcom/sm8450/cupid/cupid_imx766_bu24618_ois"
++
++/* Largest message the OIS helpers build, bus quirks permitting. */
++#define IMX766_OIS_XFER_MAX		32
++
++static const struct imx766_ois_image {
++	const char *suffix;
++	u16 addr;
++	u16 max_len;
++} imx766_ois_images[] = {
++	{ "prog",  0x0000, 0x1b40 },
++	{ "coeff", 0x1b40, BU24618_REG_CAL - 0x1b40 },
++	{ "mem",   0x4000, 0x2000 },
++};
++
++#define IMX766_OIS_NUM_IMAGES		ARRAY_SIZE(imx766_ois_images)
++
++struct bu24618_reg {
++	u16 reg;
++	u8 val;
++};
++
++/* The stock module's oisPostInitSettings: servo and gyro set-up. */
++static const struct bu24618_reg bu24618_post_init[] = {
++	{ 0x614f, 0x01 },
++	{ 0x617c, 0x00 },
++	{ 0x6020, 0x01 },
++	{ 0x617d, 0x0c },
++	{ 0x617e, 0x48 },
++	{ 0x6023, 0x02 },
++	{ 0x602c, 0x70 },
++	{ 0x602d, 0x21 },
++	{ 0x602c, 0x71 },
++	{ 0x602d, 0x00 },
++	{ 0x602c, 0x72 },
++	{ 0x602d, 0x00 },
++	{ 0x602a, 0x00 },
++	{ 0x6023, 0x00 },
++};
++
++/* Lens held centred by the servo, no stabilisation. */
++static const struct bu24618_reg bu24618_centre[] = {
++	{ BU24618_REG_SERVO, 0x01 },
++};
++
++/* Stabilisation on (the stock module's OIS enable settings). */
++static const struct bu24618_reg bu24618_ois_on[] = {
++	{ 0x6021, 0x61 },
++	{ 0x618e, 0x38 },
++	{ 0x6025, 0x90 },
++	{ BU24618_REG_SERVO, 0x02 },
++	{ 0x6157, 0x09 },
++};
++
++enum imx766_ois_mode {
++	IMX766_OIS_OFF,
++	IMX766_OIS_CENTRE,
++	IMX766_OIS_ON,
++};
++
++static char ois_mode[8] = "centre";
++module_param_string(ois_mode, ois_mode, sizeof(ois_mode), 0644);
++MODULE_PARM_DESC(ois_mode,
++		 "Main camera OIS, applied at stream start: centre (servo holds the lens centred, default), ois (stabilisation on), off (servo off; no firmware download if not loaded yet)");
++
+ /*
+  * In power-up order (the module's: VANA, CUSTOM1, VDIG, VIO); down in
+  * reverse. The module's VAF (autofocus) and CUSTOM2 (pm8350 S12, always
+@@ -1059,6 +1161,17 @@ struct imx766 {
+ 	struct v4l2_ctrl *exposure;
+ 	struct v4l2_ctrl *hblank;
+ 	struct v4l2_ctrl *vblank;
++
++	/* Optional BU24618 OIS: NULL when not described or not usable. */
++	struct i2c_client *ois;
++	struct i2c_client *eeprom;
++	const char *ois_fw_name;
++	const struct firmware *ois_fw[IMX766_OIS_NUM_IMAGES];
++	bool ois_fw_failed;		/* images missing: do not retry */
++	/* Per power cycle, cleared at power-off. */
++	bool ois_tried;			/* download attempted */
++	bool ois_running;		/* firmware runs, ois_applied set */
++	enum imx766_ois_mode ois_applied;
+ };
+ 
+ static inline struct imx766 *to_imx766(struct v4l2_subdev *sd)
+@@ -1205,6 +1318,381 @@ static int imx766_identify(struct imx766 *s)
+ 	return 0;
+ }
+ 
++/*
++ * Register access for the OIS and the EEPROM: 16-bit big-endian register
++ * address, then data. Split into messages the adapter accepts (the Qualcomm
++ * CCI takes at most 11 bytes per write and 12 per read).
++ */
++static int imx766_ois_write(struct i2c_client *client, u16 reg,
++			    const u8 *data, size_t len)
++{
++	const struct i2c_adapter_quirks *q = client->adapter->quirks;
++	size_t max = IMX766_OIS_XFER_MAX;
++	u8 buf[2 + IMX766_OIS_XFER_MAX];
++	int ret;
++
++	if (q && q->max_write_len > 2)
++		max = min_t(size_t, max, q->max_write_len - 2);
++
++	while (len) {
++		size_t n = min(len, max);
++
++		put_unaligned_be16(reg, buf);
++		memcpy(buf + 2, data, n);
++		ret = i2c_master_send(client, buf, n + 2);
++		if (ret < 0)
++			return ret;
++		if (ret != (int)(n + 2))
++			return -EIO;
++		reg += n;
++		data += n;
++		len -= n;
++	}
++
++	return 0;
++}
++
++static int imx766_ois_read(struct i2c_client *client, u16 reg, u8 *data,
++			   size_t len)
++{
++	const struct i2c_adapter_quirks *q = client->adapter->quirks;
++	size_t max = IMX766_OIS_XFER_MAX;
++	struct i2c_msg msgs[2];
++	u8 addr[2];
++	int ret;
++
++	if (q && q->max_read_len)
++		max = min_t(size_t, max, q->max_read_len);
++
++	while (len) {
++		size_t n = min(len, max);
++
++		put_unaligned_be16(reg, addr);
++		msgs[0].addr = client->addr;
++		msgs[0].flags = 0;
++		msgs[0].len = sizeof(addr);
++		msgs[0].buf = addr;
++		msgs[1].addr = client->addr;
++		msgs[1].flags = I2C_M_RD;
++		msgs[1].len = n;
++		msgs[1].buf = data;
++		ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
++		if (ret < 0)
++			return ret;
++		if (ret != (int)ARRAY_SIZE(msgs))
++			return -EIO;
++		reg += n;
++		data += n;
++		len -= n;
++	}
++
++	return 0;
++}
++
++static int bu24618_status(struct i2c_client *ois)
++{
++	u8 val;
++	int ret;
++
++	ret = imx766_ois_read(ois, BU24618_REG_STATUS, &val, 1);
++
++	return ret ? ret : val;
++}
++
++static int bu24618_wait_ready(struct imx766 *s)
++{
++	int ret, val;
++
++	ret = read_poll_timeout(bu24618_status, val,
++				val < 0 || val == BU24618_STATUS_READY,
++				1000, BU24618_READY_TIMEOUT_US, false, s->ois);
++	if (ret)
++		return ret;
++
++	return val < 0 ? val : 0;
++}
++
++static int bu24618_write_table(struct imx766 *s,
++			       const struct bu24618_reg *regs,
++			       unsigned int num_regs)
++{
++	unsigned int i;
++	int ret;
++
++	for (i = 0; i < num_regs; i++) {
++		ret = imx766_ois_write(s->ois, regs[i].reg, &regs[i].val, 1);
++		/* As stock: wait for ready, except inside a gyro access. */
++		if (!ret && regs[i].reg != BU24618_REG_GYRO_ADDR)
++			ret = bu24618_wait_ready(s);
++		if (ret) {
++			dev_warn(s->dev, "OIS register %#06x = %#04x: %d\n",
++				 regs[i].reg, regs[i].val, ret);
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
++static enum imx766_ois_mode imx766_ois_get_mode(struct imx766 *s)
++{
++	enum imx766_ois_mode mode = IMX766_OIS_CENTRE;
++	bool unknown = false;
++
++	kernel_param_lock(THIS_MODULE);
++	if (sysfs_streq(ois_mode, "off"))
++		mode = IMX766_OIS_OFF;
++	else if (sysfs_streq(ois_mode, "ois"))
++		mode = IMX766_OIS_ON;
++	else if (!sysfs_streq(ois_mode, "centre"))
++		unknown = true;
++	kernel_param_unlock(THIS_MODULE);
++
++	if (unknown)
++		dev_warn_once(s->dev,
++			      "ois_mode: use centre, ois or off; centring\n");
++
++	return mode;
++}
++
++static int imx766_ois_apply_mode(struct imx766 *s, enum imx766_ois_mode mode)
++{
++	static const u8 off;
++	int ret;
++
++	switch (mode) {
++	case IMX766_OIS_OFF:
++		ret = imx766_ois_write(s->ois, BU24618_REG_SERVO, &off, 1);
++		break;
++	case IMX766_OIS_ON:
++		ret = bu24618_write_table(s, bu24618_ois_on,
++					  ARRAY_SIZE(bu24618_ois_on));
++		break;
++	default:
++		ret = bu24618_write_table(s, bu24618_centre,
++					  ARRAY_SIZE(bu24618_centre));
++		break;
++	}
++	if (!ret)
++		s->ois_applied = mode;
++
++	return ret;
++}
++
++static void imx766_ois_release_fw(void *data)
++{
++	struct imx766 *s = data;
++	unsigned int i;
++
++	for (i = 0; i < IMX766_OIS_NUM_IMAGES; i++) {
++		release_firmware(s->ois_fw[i]);
++		s->ois_fw[i] = NULL;
++	}
++}
++
++/* Requested at the first stream start, when the root filesystem is up. */
++static int imx766_ois_load_fw(struct imx766 *s)
++{
++	const struct imx766_ois_image *img;
++	unsigned int i;
++	char *name;
++	int ret;
++
++	if (s->ois_fw[0])
++		return 0;
++	if (s->ois_fw_failed)
++		return -ENOENT;
++
++	for (i = 0; i < IMX766_OIS_NUM_IMAGES; i++) {
++		img = &imx766_ois_images[i];
++		name = kasprintf(GFP_KERNEL, "%s.%s", s->ois_fw_name,
++				 img->suffix);
++		if (!name) {
++			ret = -ENOMEM;
++			goto err;
++		}
++
++		ret = firmware_request_nowarn(&s->ois_fw[i], name, s->dev);
++		if (ret) {
++			dev_warn(s->dev,
++				 "OIS firmware %s not loaded (%d), OIS left off\n",
++				 name, ret);
++		} else if (!s->ois_fw[i]->size ||
++			   s->ois_fw[i]->size > img->max_len) {
++			dev_warn(s->dev, "OIS firmware %s: bad size %zu\n",
++				 name, s->ois_fw[i]->size);
++			ret = -EINVAL;
++		}
++		kfree(name);
++		if (ret)
++			goto err;
++	}
++
++	return 0;
++
++err:
++	imx766_ois_release_fw(s);
++	s->ois_fw_failed = true;
++	return ret;
++}
++
++/* Firmware download, calibration and the stock post-init. */
++static int imx766_ois_download(struct imx766 *s, const char **step)
++{
++	static const u8 zero;
++	u8 cal[IMX766_OIS_CAL_LEN];
++	u8 buf[4];
++	u32 sum = 0;
++	unsigned int i;
++	size_t j;
++	int ret;
++
++	*step = "download start";
++	ret = imx766_ois_write(s->ois, BU24618_REG_DL_START, &zero, 1);
++	if (ret)
++		return ret;
++	usleep_range(200, 300);
++
++	*step = "firmware download";
++	for (i = 0; i < IMX766_OIS_NUM_IMAGES; i++) {
++		const struct firmware *fw = s->ois_fw[i];
++
++		ret = imx766_ois_write(s->ois, imx766_ois_images[i].addr,
++				       fw->data, fw->size);
++		if (ret)
++			return ret;
++		for (j = 0; j < fw->size; j++)
++			sum += fw->data[j];
++	}
++
++	*step = "checksum";
++	ret = imx766_ois_read(s->ois, BU24618_REG_CHECKSUM, buf, sizeof(buf));
++	if (ret)
++		return ret;
++	if (get_unaligned_be32(buf) != sum) {
++		dev_warn(s->dev, "OIS checksum %#010x, expected %#010x\n",
++			 get_unaligned_be32(buf), sum);
++		return -EIO;
++	}
++
++	*step = "calibration";
++	ret = imx766_ois_read(s->eeprom, IMX766_EEPROM_OIS_CAL, cal,
++			      sizeof(cal));
++	if (!ret)
++		ret = imx766_ois_write(s->ois, BU24618_REG_CAL, cal,
++				       sizeof(cal));
++	if (ret)
++		return ret;
++
++	*step = "download complete";
++	ret = imx766_ois_write(s->ois, BU24618_REG_DL_COMPLETE, &zero, 1);
++	if (ret)
++		return ret;
++	usleep_range(20000, 22000);
++	ret = bu24618_wait_ready(s);
++	if (ret)
++		return ret;
++
++	*step = "post-init";
++	return bu24618_write_table(s, bu24618_post_init,
++				   ARRAY_SIZE(bu24618_post_init));
++}
++
++/*
++ * Called at stream start, sensor powered: download the OIS firmware once
++ * per power cycle and set the mode from ois_mode. Failures only warn; the
++ * camera streams either way, with the lens where it rests.
++ */
++static void imx766_ois_start(struct imx766 *s)
++{
++	enum imx766_ois_mode mode;
++	const char *step;
++	ktime_t start;
++	int ret;
++
++	if (!s->ois)
++		return;
++
++	mode = imx766_ois_get_mode(s);
++
++	if (s->ois_running) {
++		if (mode != s->ois_applied && imx766_ois_apply_mode(s, mode))
++			dev_warn(s->dev, "failed to switch the OIS mode\n");
++		return;
++	}
++	if (s->ois_tried || mode == IMX766_OIS_OFF)
++		return;
++	s->ois_tried = true;
++
++	if (imx766_ois_load_fw(s))
++		return;
++
++	start = ktime_get();
++	ret = imx766_ois_download(s, &step);
++	if (ret) {
++		dev_warn(s->dev, "OIS bring-up failed at %s: %d\n", step, ret);
++		return;
++	}
++	s->ois_running = true;
++
++	step = "mode";
++	ret = imx766_ois_apply_mode(s, mode);
++	if (ret) {
++		dev_warn(s->dev, "OIS bring-up failed at %s: %d\n", step, ret);
++		return;
++	}
++
++	dev_dbg(s->dev, "OIS up in %lld ms\n",
++		ktime_ms_delta(ktime_get(), start));
++}
++
++static void imx766_unregister_client(void *data)
++{
++	i2c_unregister_device(data);
++}
++
++/*
++ * The OIS and the module EEPROM (its calibration) answer at their own
++ * addresses, named "ois" and "eeprom" in reg-names. Optional: without them,
++ * or if they cannot be registered, the sensor works without OIS.
++ */
++static void imx766_ois_probe(struct imx766 *s, struct i2c_client *client)
++{
++	struct i2c_client *ois, *eeprom;
++
++	if (device_property_match_string(s->dev, "reg-names", "ois") < 0)
++		return;
++	if (device_property_match_string(s->dev, "reg-names", "eeprom") < 0) {
++		dev_warn(s->dev, "OIS without the module EEPROM, not used\n");
++		return;
++	}
++
++	ois = i2c_new_ancillary_device(client, "ois", 0);
++	if (IS_ERR(ois)) {
++		dev_warn(s->dev, "failed to register the OIS: %pe\n", ois);
++		return;
++	}
++	if (devm_add_action_or_reset(s->dev, imx766_unregister_client, ois))
++		return;
++
++	eeprom = i2c_new_ancillary_device(client, "eeprom", 0);
++	if (IS_ERR(eeprom)) {
++		dev_warn(s->dev, "failed to register the EEPROM: %pe\n",
++			 eeprom);
++		return;
++	}
++	if (devm_add_action_or_reset(s->dev, imx766_unregister_client, eeprom))
++		return;
++
++	if (devm_add_action_or_reset(s->dev, imx766_ois_release_fw, s))
++		return;
++
++	s->ois_fw_name = IMX766_OIS_FW_DEFAULT;
++	device_property_read_string(s->dev, "firmware-name", &s->ois_fw_name);
++	s->ois = ois;
++	s->eeprom = eeprom;
++}
++
+ static int imx766_enable_streams(struct v4l2_subdev *sd,
+ 				 struct v4l2_subdev_state *state, u32 pad,
+ 				 u64 streams_mask)
+@@ -1232,6 +1720,8 @@ static int imx766_enable_streams(struct v4l2_subdev *sd,
+ 	if (ret)
+ 		goto err_rpm_put;
+ 
++	imx766_ois_start(s);
++
+ 	ret = cci_write(s->regmap, IMX766_REG_ORIENTATION,
+ 			IMX766_ORIENTATION, NULL);
+ 	if (!ret)
+@@ -1436,6 +1926,10 @@ static int imx766_power_off(struct device *dev)
+ 	struct imx766 *s = to_imx766(sd);
+ 	unsigned int i;
+ 
++	/* The OIS loses its firmware with the power. */
++	s->ois_tried = false;
++	s->ois_running = false;
++
+ 	clk_disable_unprepare(s->mclk);
+ 	usleep_range(1000, 1500);
+ 	gpiod_set_value_cansleep(s->reset_gpio, 1);
+@@ -1537,6 +2031,8 @@ static int imx766_probe(struct i2c_client *client)
+ 	if (ret)
+ 		goto err_power_off;
+ 
++	imx766_ois_probe(s, client);
++
+ 	ret = imx766_init_controls(s);
+ 	if (ret)
+ 		goto err_power_off;

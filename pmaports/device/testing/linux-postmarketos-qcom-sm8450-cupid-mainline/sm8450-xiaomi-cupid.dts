@@ -2206,12 +2206,21 @@
 	/*
 	 * Main: Sony IMX766 (stock qcom,cam-sensor0, CamX slave address
 	 * 0x20), three C-PHY trios into CSIPHY2, MCLK2 at 19.2 MHz, reset
-	 * gpio126. Register tables from the stock CamX sensor module. The
-	 * module's OIS (BU24618) and autofocus are not described yet.
+	 * gpio126. Register tables from the stock CamX sensor module.
+	 *
+	 * The module also answers at 0x3e (ROHM BU24618 OIS controller) and
+	 * 0x50 (module EEPROM, 16-bit addresses), named in reg-names. The
+	 * OIS shares the sensor's rails and runs from RAM: the driver
+	 * downloads its firmware at the first stream start of each power
+	 * cycle (firmware-name is the base name, .prog, .coeff and .mem
+	 * appended, from the stock vendor partition) with the calibration
+	 * from the EEPROM, then centres the lens (module parameter ois_mode).
 	 */
 	camera@10 {
 		compatible = "sony,imx766";
-		reg = <0x10>;
+		reg = <0x10>, <0x3e>, <0x50>;
+		reg-names = "sensor", "ois", "eeprom";
+		firmware-name = "qcom/sm8450/cupid/cupid_imx766_bu24618_ois";
 
 		clocks = <&camcc CAM_CC_MCLK2_CLK>;
 		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;

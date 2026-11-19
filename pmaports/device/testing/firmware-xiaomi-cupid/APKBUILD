@@ -13,13 +13,15 @@
 # The touchscreen firmware is not part of that repository. The ST FTS driver
 # refuses to probe without it (FW_UPDATE_ON_PROBE returns -ENODEV), so it is
 # fetched from the LineageOS vendor blob repository for cupid, pinned to a
-# commit.
+# commit. So are the main camera's OIS controller images (BU24618, loaded by
+# the IMX766 driver at every stream start, kernel patch 0043).
 pkgname=firmware-xiaomi-cupid
 pkgver=2
-pkgrel=2
+pkgrel=3
 pkgdesc="Firmware for Xiaomi 12"
 subpackages="
 	$pkgname-adsp
+	$pkgname-camera
 	$pkgname-cdsp
 	$pkgname-gpu
 	$pkgname-haptics
@@ -170,6 +172,9 @@ source="
 	sns-sx933x_0-$_muppets_commit.json::$_muppets_sns/config/sx933x_0.json
 	sns-tcs3408-$_muppets_commit.json::$_muppets_sns/config/tcs3408.json
 	sns-tmd3719-$_muppets_commit.json::$_muppets_sns/config/tmd3719.json
+	cupid_imx766_bu24618_ois.prog-$_muppets_commit::$_muppets/cupid_imx766_bu24618_ois.prog
+	cupid_imx766_bu24618_ois.coeff-$_muppets_commit::$_muppets/cupid_imx766_bu24618_ois.coeff
+	cupid_imx766_bu24618_ois.mem-$_muppets_commit::$_muppets/cupid_imx766_bu24618_ois.mem
 "
 builddir="$srcdir/$pkgname-$_commit"
 
@@ -183,6 +188,17 @@ adsp() {
 
 	install -Dm644 "$builddir"/adsp* -t \
 		"$subpkgdir/lib/firmware/qcom/sm8450/cupid"
+}
+
+camera() {
+	pkgdesc="Xiaomi 12 main camera OIS controller images (ROHM BU24618)"
+
+	# The IMX766 driver (kernel patch 0043) requests these by these names.
+	local f
+	for f in prog coeff mem; do
+		install -Dm644 "$srcdir"/cupid_imx766_bu24618_ois.$f-$_muppets_commit \
+			"$subpkgdir"/lib/firmware/qcom/sm8450/cupid/cupid_imx766_bu24618_ois.$f
+	done
 }
 
 cdsp() {
@@ -360,4 +376,7 @@ dd842a0b9ff43ea0430dd528b296512406644c0c27fe7c4af897681d75cd730dc374a295eca4f2e5
 5606db01e7303a25fb01d65b6e1c5ed2a3b8318e9b6510f7e4518a491a59f3a87c82cee44424e6f973a71784b0f1cc1caabc1ef0be9e1e6ae6b0de51d26d9fdd  sns-sx933x_0-ba672d8f47c5533b2fb45bae5b4528594da70107.json
 d540e748ab837f6df78a23f9fddfefb24f87da6360ebdeb414a62b896776b5241e001ac2acdb56fd476b7334ff5ee471a3b59186158820c3f494148a70d646ac  sns-tcs3408-ba672d8f47c5533b2fb45bae5b4528594da70107.json
 5427e4ed4115205dc21e037e22eb02968eca57cf07afa6a69c3060f3f430053d4e7dca382bdd4c3dbda3594f2a017b6c7a3b35b083348acabd84fed09c3a63ea  sns-tmd3719-ba672d8f47c5533b2fb45bae5b4528594da70107.json
+e74958bd5a76f2eb189ee11e7de5f31ad0dc776149b0fa875b1ce91885cfa199732e29ec23aed246f2d22f03e7816a5bc5ef7a59499001562b20637f65d8876c  cupid_imx766_bu24618_ois.prog-ba672d8f47c5533b2fb45bae5b4528594da70107
+2c135e896091ab00af8fccb0dded07b9b3df92180ba8007891d978252a8a40555ad4de186a7dc292325def352f81902de494677e5ef5ec389b379f9e787520f3  cupid_imx766_bu24618_ois.coeff-ba672d8f47c5533b2fb45bae5b4528594da70107
+9b04edcb3ba124a508f621bafb46b250fe2613d2ee8546e3975599b2df4910110bd81102547180f89599459e35d47dac76c1de5e65d427cd997be78c034eb733  cupid_imx766_bu24618_ois.mem-ba672d8f47c5533b2fb45bae5b4528594da70107
 "
