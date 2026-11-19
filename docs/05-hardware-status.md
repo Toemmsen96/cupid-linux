@@ -28,13 +28,13 @@ fallbacks.
 | Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | all four in apps (7.3) | the 6.13 tree has no SM8450 CAMSS; 6.17 streams the OV13B10 ultra-wide. On 7.3 all four sensors stream (OV32B40 front, S5K5E9 telemacro, IMX766 main over C-PHY, OV13B10 ultra-wide) and work in apps through libcamera's simple pipeline with the software ISP (`pmaports/temp/libcamera`: sensor helpers, binned modes, autofocus on the main and macro cameras through the AK7375/DW9800K lens drivers, colour matrices and lens shading from the stock Chromatix tuning). See [Cameras](#cameras) and [Cameras in apps](#cameras-in-apps-libcamera). No hardware ISP, no OIS; main camera shows streaks while the lens is powered (intermittent, open) |
 | Camera flash | works | works | works (7.3) | `pm8350c_flash`, `white:flash` LED: torch verified with the main camera (frame brightness 8 -> 171) |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
-| WiFi | works | works, stabilised | works | patches 0004/0005, PMU supplies, ASPM off, power save off |
+| WiFi | works | works, stabilised | works; full speed with the stock firmware (7.3 r22) | patches 0004/0005, PMU supplies, ASPM off, power save off. With linux-firmware's generic board file it is slow (weak 5 GHz receive); the stock WLAN firmware and board file from `modem_b` plus a country setting give 250/500 Mbit/s on 5 GHz, see [WiFi speed](#wifi-speed-73) |
 | Bluetooth | works | works | works (7.3) | needs an address: `bootmac`; scanning finds nearby devices (7.3) |
 | GPS | untested | untested | works (7.3, patched ModemManager) | modem GNSS over QMI LOC. The SM8450 modem rejects LOC event registration (InvalidArgument) unless the Client Type TLV is set, and refuses to start a session (GeneralError) until a registration succeeded; ModemManager started first and never set a client type. `pmaports/temp/modemmanager` (r100) registers first as the application framework client. Verified 2026-11-16 with the patched binary and the installed r100 package: NMEA and satellites through `mmcli` (indoors: 2 GPS + 1 GLONASS tracked, no fix). Standalone only, no A-GPS over mobile data |
 | NFC | broken | no | driver loads | NXP SN100T on i2c9 0x28 (stock `qcom,sn-nci`), mainline `nxp-nci-i2c` (NCI 2.0), GPIOs irq 46 / ven 34 / fw 45 / clk-req 35 like the Nothing Phone (2); node enabled at 1 MHz. Userspace: neard (tags); no payments/card emulation |
 | Modem | broken | untested | data, SMS, VoLTE calls (7.3) | Data verified on pkgrel 6 (2026-11-13): LTE/5G NR, DNS, HTTP, IPA runtime suspend/resume (cause: 6.13's v5.0 GSI register table, fixed by upstream 56007972c0b1 in 0016; IPA v5.1 is the pending upstream series 0012/0013). APN by hand (`nmcli connection add type gsm ifname '*' con-name 'Mobile data' apn <carrier APN>`). 7.3, 2026-11-16: SMS send and receive work (before device r17 the greeter's Chatty took SMS arriving at the login screen into `/var/lib/greetd`; r17 keeps Chatty out of the greeter session). Calls need VoLTE (no 2G/3G in Switzerland) and VoLTE needs an active carrier configuration: the modem keeps only the last 25 of the 305 MBNs it loads at boot and Linux selects none, so outgoing calls stayed in "dialing" and incoming ones went to voicemail. `cupid-modem-config` (device package r16) loads, selects and activates the SIM's MBN over QMI PDC once the modem is up (picked from the network codes in the MBN trailers) and deactivates it at shutdown: with a VoLTE MBN already active at power-on the modem start-up stalls ("DOG detects stalled initialization") through three watchdog resets and then comes up without configuration. With it activated at runtime, calls ring and connect in both directions (verified 2026-11-16 from the Calls app; one earlier outgoing call ended 3 s after being answered, not reproduced). Starting a call used to oops the WCD938x SoundWire interrupt thread (the RX device has no regmap), fixed by 0039 in kernel r14. Call audio not done; `qmicli --pdc-load-config` segfaults, the service talks PDC over QRTR itself |
 | FDE | broken | no | | touch is not in the initramfs (the driver needs its firmware there too), so unl0kr cannot take input |
-| USB OTG | broken | untested | | `dr_mode = "otg"`, USB 2.0 only |
+| USB OTG | broken | untested | no (7.3) | `dr_mode = "otg"`, USB 2.0 only. On 7.3 an OTG adapter switches the port to host and VBUS source and xHCI registers, but no device ever enumerates in either plug orientation |
 | Sensors | broken | no | accelerometer, light, compass (7.3) | SLPI with hexagonrpcd and the persist registry copy. On 7.3 the accelerometer (LSM6DSO), light sensor and compass (AK0991x) report through libssc/iio-sensor-proxy and auto-rotation works; proximity does not initialise (stock uses ultrasound through the audio DSP). Mount matrix from `81-libssc-xiaomi-cupid.rules` |
 | Haptics | broken | yes (7.3) | works (7.3 r13) | Awinic AW8697 on i2c16 0x5a (reset gpio89, irq gpio90). The first driver (patch 0019) hung probe for ~9 minutes on 6.13 (I2C errors ignored inside polling loops while holding the device lock). Reworked in the 7.3 package (r13): probe only checks the chip, setup, f0 calibration (170.1 Hz) and the RAM upload run from a work item, the first I2C error disables the chip. Boots clean with the node enabled; FF_RUMBLE and feedbackd vibrate. The 6.13/6.17 packages keep the old driver with the node disabled |
 | Fingerprint | | no | not yet (feasible, big effort) | Goodix optical under-display sensor on TrustZone-owned SPI; capture and matching run in the stock QSEE trusted app `gfcupid`. Linux can load and drive that app through QTEE (`CONFIG_QCOMTEE`, kernel r15) with Qualcomm's minkipc/quic-teec userspace; the command protocol must be reverse engineered from the stock HAL, plus local-HBM illumination in the panel driver. Plan in [08-fingerprint.md](08-fingerprint.md) |
@@ -58,6 +58,57 @@ Port's device ID and were dropped; ath11k gave up after 20 s ("MHI did not
 load image over BHI"). The same parser is in 7.2. The devicetree also got
 the WCN6855 details from the HDK: enable pins start low, swctrl and
 xo-clk GPIOs, vddaon from pm8350_s11, S11/S12 at the stock minimums.
+
+## WiFi speed (7.3)
+
+The WCN6855 reports `board_id 0xff` (nothing in its OTP), so ath11k loads
+the linux-firmware `board-2.bin` entry for
+`bus=pci,vendor=17cb,device=1103,subsystem-vendor=17cb,subsystem-device=0108,qmi-chip-id=18,qmi-board-id=255`:
+Qualcomm's reference board, not the Xiaomi 12's antennas and front end.
+With it, a router a few metres away reads -18 dBm on 2.4 GHz but -79 to
+-85 dBm on 5 GHz; 2.4 GHz gave 6-11 Mbit/s with 100+ ms pings and loss.
+
+The stock files are on the `modem_b` partition (vfat, `image/`):
+`bdwlang.elf` (global units, `androidboot.hwc=GL`; `bdwlan.elf` for the
+rest, the `bdwlan.eXX` files are for other board IDs), `amss20.bin`
+(WLAN.HSP.2.0.c2, the firmware for chip v2.x), `m3.bin`, `regdb.bin`.
+
+| Firmware + board file | 2.4 GHz | 5 GHz |
+|---|---|---|
+| linux-firmware HSP.1.1 + generic | 6-11 Mbit/s | -85 dBm, slow |
+| linux-firmware HSP.1.1 + stock board file | firmware crashes (RDDM) at the board download | |
+| stock HSP.2.0.c2 + stock board file, country US (firmware default) | 33-37 Mbit/s, 3-9 ms | -42 dBm, but on a DFS channel 80 % of transmitted frames fail, no DHCP |
+| stock HSP.2.0.c2 + stock board file, country set | same | -32 dBm, VHT80 2x2, 256 Mbit/s up, 501 Mbit/s down |
+
+The board file is an ELF with one 58180-byte segment, the same layout as
+the generic one; its checksum (bytes 10-11) makes the XOR of all
+little-endian 16-bit words 0xffff. Patching the header bytes that differ
+did not stop the HSP.1.1 crash, so the stock board file needs the stock
+firmware.
+
+The ath11k wiphy is self-managed: the firmware picks the country (US from
+the stock regdb, or from 802.11d beacons) and `iw reg set` only reaches it
+with `CONFIG_ATH_REG_DYNAMIC_USER_REG_HINTS` (kernel r22, needs
+`CFG80211_CERTIFICATION_ONUS` and `EXPERT`). The firmware has to be told
+the real country, otherwise it does not transmit properly on DFS channels.
+
+Using the stock files by hand until the device package does it:
+
+```sh
+m=$(mktemp -d); sudo mount -o ro /dev/disk/by-partlabel/modem_b $m
+d=/lib/firmware/updates/ath11k/WCN6855/hw2.1; sudo mkdir -p $d
+sudo cp $m/image/amss20.bin $d/amss.bin
+sudo cp $m/image/m3.bin $m/image/regdb.bin $d/
+# board-2.bin with one entry for the board name above, data = bdwlang.elf
+sudo umount $m
+# country at boot (XX = your country code):
+echo 'ACTION=="add", SUBSYSTEM=="ieee80211", RUN+="/usr/sbin/iw reg set XX"' |
+	sudo tee /etc/udev/rules.d/90-wifi-country.rules
+```
+
+The `board-2.bin` container is a 20-byte header (`QCA-ATH11K-BOARD\0`
+padded to 4) followed by IEs of `u32 type, u32 length, data padded to 4`;
+a board IE (type 0) holds a name IE (type 0) and a data IE (type 1).
 
 ## Open issue: sporadic display corruption
 

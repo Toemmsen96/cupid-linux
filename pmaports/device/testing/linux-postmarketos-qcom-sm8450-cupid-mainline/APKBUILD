@@ -45,11 +45,14 @@
 # up to 4 KiB, which r19's waiting GPR send could not change).
 # r21: 0042 voice call front end ("Voice Call Switch", DSP command sequence
 # from firmware-name, set in the cupid DTS).
+# r22: CONFIG_ATH_REG_DYNAMIC_USER_REG_HINTS (with CFG80211_CERTIFICATION_ONUS
+# and EXPERT) so ath11k passes `iw reg set XX` to the WCN6855 firmware; its
+# wiphy is self-managed and otherwise keeps the firmware's own country.
 # Keep stable/next as fallbacks: pmbootstrap config kernel next
 _flavor="postmarketos-qcom-sm8450-cupid-mainline"
 pkgname=linux-$_flavor
 pkgver=7.3.4
-pkgrel=21
+pkgrel=22
 pkgdesc="Linux 7.3 for the Xiaomi 12 (cupid) with the cupid patches (experimental)"
 arch="aarch64"
 _carch="arm64"
@@ -155,7 +158,7 @@ package() {
 
 sha512sums="
 db5508c3cf8b613b4680022eb785c036bcf8a5c952f8d0b2f3c2c7dc16779cf8bd954e0bca0b0b52451bac61430a687ae73205574f002f3b60de886640ebb9b0  linux-7.3.4.tar.xz
-98ccae0887539f6e1b807b9dc5dde39a6a5eac5413f224d2b1c44ab788ba3ff50a7a741f43b05cd9797531c88bd172a824baf1910a0a410cb66e106d0681c29f  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
+3bacb79a7a26cf97006e0929e3c72c8f028e57550bcccaa4733ba84aae0dbd7a635f5f4c45fd86f38ab9be798de2471d404fedff499b3637d8afad65c4459cc8  config-postmarketos-qcom-sm8450-cupid-mainline.aarch64
 96835b246221c0a7e464c86bab961554dc3eb91165371991c15e5eed37fb59a86cde09ecc41adb66f84b7da4be6f78a09aaeda7e1a116453dc3b60a55c1408cb  sm8450-xiaomi-cupid.dts
 f03a3095a29c14e492778c4d0d35bdd1adcbcea73a9e65aef9718744d0a36230548bdee1a5656cfd5d905d95de266a54eeb5ab88bd2924cd7e5878dbd4224096  fork-0001-drm-panel-add-l3-42-02-0a-dsc-driver.patch
 05f0f5ffa8e5b42052f0ba05a99a463f857ba5c1283b45761cb2917ab6e7fd6d38a4ba7bc40578d7816bb020e2ff27083577c9fd89b454d1854bb32349beba8f  fork-0002-input-touchscreen-add-fts_spi-driver.patch

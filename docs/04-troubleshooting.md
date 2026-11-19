@@ -91,6 +91,17 @@ shows the active value; `vrefresh` in
   `performance` (kernel cmdline), and NetworkManager's `wifi.powersave = 2`.
 - MAC is an Atheros default (`00:03:7f:...`): expected; the vendor
   calibration and MAC are not used. NetworkManager randomises it anyway.
+- Slow WiFi, 5 GHz networks 40-60 dB weaker than 2.4 GHz from the same
+  router: the generic linux-firmware board file is in use. Use the stock
+  firmware and board file from `modem_b`, see "WiFi speed" in
+  [05-hardware-status](05-hardware-status.md#wifi-speed-73).
+- With the stock firmware a 5 GHz network associates but gets no DHCP
+  lease, `iw dev wlan0 station dump` shows most `tx failed`: the firmware
+  runs with its default country (US) on a DFS channel. Set the real one
+  with `iw reg set XX` (kernel r22 or later) and check that `iw reg get`
+  shows it under `phy#0 (self-managed)`.
+- A different IP address on the 5 GHz network than on 2.4 GHz is normal:
+  NetworkManager uses a different random MAC per network.
 
 ## Bluetooth
 
