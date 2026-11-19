@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: CC0-1.0
 # OmniVision OV32B40, Xiaomi 12 front camera (ofilm module).
 # Generated from the stock Chromatix tuning (com.qti.tuned.cupid_ofilm_ov32b40_front):
+# AWB colour temperature curve from the refPtV1 white points,
 # colour matrices from cc13_ipe_v2 for CCT regions 1500-2500, 2800-3200, 3800-4300, 4800-5600, 6300-10000 K,
 # lens shading from lsc41 (1500-3050, 3600-4300, 4800-10000 K regions, R/Gr/Gb/B 17x13 resampled
 # to 17x17, G = (Gr + Gb) / 2, R and B scaled so the table keeps the
@@ -13,6 +14,53 @@ version: 1
 algorithms:
   - BlackLevel:
   - Awb:
+      # Bayesian AWB along the stock white points (refPtV1: D75, D65,
+      # D50, A, horizon; 10000 K extrapolated), converted to gains for
+      # statistics taken before lens shading. A single frame mean is
+      # measured, so no lux priors; the search may leave the curve towards
+      # green as far as the stock fluorescent points (CW, TL84).
+      algorithm: bayes
+      AwbMode:
+        Auto:
+          lo: 2300
+          hi: 8000
+        Incandescent:
+          lo: 2300
+          hi: 3000
+        Tungsten:
+          lo: 3000
+          hi: 3500
+        Fluorescent:
+          lo: 3800
+          hi: 4700
+        Indoor:
+          lo: 3000
+          hi: 5000
+        Daylight:
+          lo: 5000
+          hi: 6500
+        Cloudy:
+          lo: 6500
+          hi: 8000
+      priors:
+        - lux: 0
+          ct: [ 2000, 13000 ]
+          probability: [ 1.0, 1.0 ]
+      colourGains:
+        - ct: 2300
+          gains: [ 1.0498, 2.9965 ]
+        - ct: 2850
+          gains: [ 1.2693, 2.4823 ]
+        - ct: 5000
+          gains: [ 1.7870, 1.5258 ]
+        - ct: 6500
+          gains: [ 2.0988, 1.3486 ]
+        - ct: 7500
+          gains: [ 2.2150, 1.2338 ]
+        - ct: 10000
+          gains: [ 2.4172, 1.1275 ]
+      transversePos: 0.02
+      transverseNeg: 0.06
   - Lsc:
       type: table
       sets:

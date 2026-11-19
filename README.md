@@ -80,7 +80,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Firmware | Fetched from GitHub instead of git.mainlining.org (which has been returning 502); the modem blob is included in GitHub's archive despite being in LFS. | `firmware-xiaomi-cupid` |
 
 Not addressed yet: fingerprint (plan in [docs/08-fingerprint.md](docs/08-fingerprint.md)), FM, fast charging (vendor
-charge pumps; expect USB-PD rates), OIS, proximity (ultrasound through the
+charge pumps; expect USB-PD rates), OIS stabilisation (the lens is held centred), proximity (ultrasound through the
 audio DSP), call audio. Open investigations: the display corruption on the 6.13/6.17 kernels. Details per component
 are in [docs/05-hardware-status.md](docs/05-hardware-status.md).
 

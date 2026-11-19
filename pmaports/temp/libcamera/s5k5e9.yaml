@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: CC0-1.0
 # Samsung S5K5E9, Xiaomi 12 macro camera (sunny module).
 # Generated from the stock Chromatix tuning (com.qti.tuned.cupid_sunny_s5k5e9_macro):
+# AWB colour temperature curve from the refPtV1 white points,
 # colour matrices from cc13_ipe_v2 for CCT regions 1-2450, 2650-3350, 3900-4400, 4700-5300, 5800-10000 K,
 # lens shading from lsc41 (3900-4600, 5000-6500 K regions, R/Gr/Gb/B 17x13 resampled
 # to 17x17, G = (Gr + Gb) / 2, R and B scaled so the table keeps the
@@ -17,6 +18,53 @@ algorithms:
   - BlackLevel:
   - Af:
   - Awb:
+      # Bayesian AWB along the stock white points (refPtV1: D75, D65,
+      # D50, A, horizon; 10000 K extrapolated), converted to gains for
+      # statistics taken before lens shading. A single frame mean is
+      # measured, so no lux priors; the search may leave the curve towards
+      # green as far as the stock fluorescent points (CW, TL84).
+      algorithm: bayes
+      AwbMode:
+        Auto:
+          lo: 2300
+          hi: 8000
+        Incandescent:
+          lo: 2300
+          hi: 3000
+        Tungsten:
+          lo: 3000
+          hi: 3500
+        Fluorescent:
+          lo: 3800
+          hi: 4700
+        Indoor:
+          lo: 3000
+          hi: 5000
+        Daylight:
+          lo: 5000
+          hi: 6500
+        Cloudy:
+          lo: 6500
+          hi: 8000
+      priors:
+        - lux: 0
+          ct: [ 2000, 13000 ]
+          probability: [ 1.0, 1.0 ]
+      colourGains:
+        - ct: 2300
+          gains: [ 1.0463, 3.0367 ]
+        - ct: 2850
+          gains: [ 1.3368, 2.4507 ]
+        - ct: 5000
+          gains: [ 2.0148, 1.4721 ]
+        - ct: 6500
+          gains: [ 2.3418, 1.2937 ]
+        - ct: 7500
+          gains: [ 2.5773, 1.1883 ]
+        - ct: 10000
+          gains: [ 2.8487, 1.0801 ]
+      transversePos: 0.02
+      transverseNeg: 0.12
   - Lsc:
       type: table
       sets:

@@ -26,7 +26,7 @@ fallbacks.
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
 | Audio | broken | partial | headphones, USB-C audio, speakers (7.3) | headphone/codec-DMA path and USB-C audio. Internal speakers (two CS35L41 on tertiary TDM, 7.3 only: 6.13/6.17 lack the legacy AudioReach TDM endpoint) work: TDM lane 1 and inverted frame sync (kernel r16, device r18), see [Speakers](#speakers-73). Call audio (voice path through the DSP) not done: voice graphs open and start and the modem starts the vocoder (EVS 32 kHz), but no audio yet, see [09-call-audio](09-call-audio.md) |
-| Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | all four in apps (7.3) | the 6.13 tree has no SM8450 CAMSS; 6.17 streams the OV13B10 ultra-wide. On 7.3 all four sensors stream (OV32B40 front, S5K5E9 telemacro, IMX766 main over C-PHY, OV13B10 ultra-wide) and work in apps through libcamera's simple pipeline with the software ISP (`pmaports/temp/libcamera`: sensor helpers, binned modes, autofocus on the main and macro cameras through the AK7375/DW9800K lens drivers, colour matrices and lens shading from the stock Chromatix tuning). See [Cameras](#cameras) and [Cameras in apps](#cameras-in-apps-libcamera). No hardware ISP, no OIS; main camera shows streaks while the lens is powered (intermittent, open) |
+| Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | all four in apps (7.3) | the 6.13 tree has no SM8450 CAMSS; 6.17 streams the OV13B10 ultra-wide. On 7.3 all four sensors stream (OV32B40 front, S5K5E9 telemacro, IMX766 main over C-PHY, OV13B10 ultra-wide) and work in apps through libcamera's simple pipeline with the software ISP (`pmaports/temp/libcamera`: sensor helpers, binned modes, autofocus on the main and macro cameras through the AK7375/DW9800K lens drivers, colour matrices and lens shading from the stock Chromatix tuning). See [Cameras](#cameras) and [Cameras in apps](#cameras-in-apps-libcamera). No hardware ISP; OIS held centred by the kernel (pending, r24, see [Main camera](#main-camera-73)); main camera shows streaks while the lens is powered (intermittent, open) |
 | Camera and microphone indicators | | | works (phosh 0.59) | orange icons in the top bar while an app uses a camera or records audio, as in GNOME. Camera: phosh 0.59's `camera-status-icon` (running PipeWire camera nodes, which the libcamera cameras are; enabled by default). Microphone: `pmaports/temp/phosh-plugin-mic-status-icon`, an out-of-tree phosh plugin watching PulseAudio source outputs (pmOS phosh runs PulseAudio; PipeWire carries only video). Monitors of outputs, peak meters and volume controls (`org.gnome.VolumeControl`, pavucontrol) do not count, as in GNOME Shell. Verified 2026-11-19 with Snapshot and with `parecord` (icon on while recording, off 0.5 s after) |
 | Camera flash | works | works | works (7.3) | `pm8350c_flash`, `white:flash` LED: torch verified with the main camera (frame brightness 8 -> 171) |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
@@ -353,8 +353,29 @@ rail PM8008 L6 at 3.1 V, DVDD 1.104 V LDO on gpio2 (from pm8350 S12), I/O
 L5; MCLK2 on gpio102, reset gpio126. The module streams mirrored and
 flipped (0x0101 = 3, it is mounted upside down), which makes the colour
 order BGGR; the test pattern generator comes after the readout and still
-decodes as RGGB. The OIS (BU24618) and the autofocus actuator are not
-driven, so the lens rests where it falls.
+decodes as RGGB.
+
+The module also carries a ROHM BU24618 OIS controller at 0x3e and a
+16 KiB EEPROM at 0x50 (16-bit addresses) on the same bus, both powered with
+the sensor. The BU24618 runs from RAM: without a firmware download its
+servo is off and the lens rests where it falls. Kernel r24 (patch 0043,
+pending) has the IMX766 driver bring it up at the first stream start of
+each power cycle, as the stock CamX module does
+(`com.qti.sensormodule.cupid_semco_imx766_wide.bin`): download start
+(0xF010), the stock images `cupid_imx766_bu24618_ois.prog/.coeff/.mem`
+(firmware-xiaomi-cupid-camera, from the vendor firmware) at 0x0000, 0x1B40
+and 0x4000 (the module's `cam_ois_opcode`), checksum at 0xF008 (the byte
+sum, 0x6AE02), 38 bytes of calibration from EEPROM 0x20F2 to 0x1DC0,
+download complete (0xF006), status 0x6024 == 1, the stock post-init, then
+centring (0x6020 = 1; module parameter `ois_mode=centre|ois|off`). The CCI
+takes at most 11 bytes per write message and 12 per read, so the download
+goes out in 9-byte pieces (~0.3 s). Verified from userspace on
+2026-11-19 with `scripts/ois-bu24618.py` while the camera streamed:
+checksum and status as expected, the lens moved to its centre (frame shift)
+and the image got ~30 % sharper (mean gradient energy). The EEPROM also
+holds the autofocus calibration (Xiaomi layout: AF flag 0x27, macro
+distance/DAC 0x2B/0x2D = 10 cm/802, infinity 0x2F/0x31 = 1000 cm/170, in
+the AK7314's 10-bit units); `scripts/i2c-dump16.py` dumps it.
 
 ```sh
 M="media-ctl -d /dev/media0"; F="fmt:SBGGR10_1X10/4096x3072"
@@ -386,11 +407,21 @@ libcamera has no sensor helpers for these sensors, so auto exposure treats
 the gain codes as linear and images stay dark. `pmaports/temp/libcamera`
 (postmarketOS' libcamera 0.8.0 plus 0003) adds helpers (gain model, black
 level) and sensor properties for all four; `scripts/sync.sh` puts it over
-the pmaports one. OIS is not done.
+the pmaports one.
 
 Autofocus (pkgrel 3/4) is the pending software-ISP AF series (Milan
 Zamazal's v2 plus focus statistics) on the AK7375 (main) and DW9800K
 (macro) lens drivers; it sweeps and settles but needs texture to lock.
+The main lens is an AK7314 (10-bit) driven through the AK7375's 12-bit
+register, so 4 driver steps make one lens step. Patch 0017 (pkgrel 7,
+pending) takes `lensMin`, `lensMax`, `settleFrames` and `fineStep` from the
+tuning file: the IMX766 searches 600-3300 (the EEPROM's infinity/macro DAC
+170/802 times 4, with margin) instead of 0-4095, ignores the statistics of
+the two frames after each lens move, and fine-scans one coarse step around
+the coarse peak in steps of 8. It also fixes a maximum that drifted to the
+end of the window and a fine scan that started from a stale frame; in a
+simulation with 2 frames of lens latency the search ends within 4 steps
+of the peak in 82-166 frames.
 
 Colour and lens shading tuning (pkgrel 6): `ov32b40.yaml`, `imx766.yaml` and
 `s5k5e9.yaml` carry the stock Chromatix colour matrices (cc13, per CCT
@@ -412,7 +443,22 @@ them from `vendor/lib64/camera/com.qti.tuned.cupid_*.bin`. Things learned:
 Measured corner/centre brightness on a ceiling: main 0.56 to 1.00, macro
 0.81 to 0.94, front 0.5 to 0.95. The IMX766 corners need more than the
 3.98 maximum gain and stay slightly under-corrected in the extreme corners.
-AWB is still grey world with a generic CCT estimate (no `colourGains`).
+
+White balance (pkgrel 7, not yet checked on the phone): libipa's Bayesian
+AWB (`algorithm: bayes`) instead of grey world, so the white point stays on
+the sensor's own colour temperature curve and the CCT that picks the colour
+matrix and shading table comes from that curve instead of a generic
+estimate. The curve is the stock AWB reference points (`refPtV1`: ten
+R/G, B/G white points; D75, D65, D50, A and horizon are used, 10000 K is
+extrapolated). The points carry no illuminant names: mapping them to xy
+through the stock D65 colour matrix places them at ~16000, 7250, 6500,
+5150, 4150, 4000, 3900, 2900, 2400 and 1900 K, the same order in every
+cupid bin. They are white after the stock shading, while the software ISP
+measures before it, so each gain is multiplied by the vignetting ratio
+mean(1/lsc_G) / mean(1/lsc_C) of the stock table for that CCT. The single
+frame mean the software ISP measures gives no lux, so the priors are flat;
+`transverseNeg` lets the white point reach the stock fluorescent points
+(CW, TL84) on the green side.
 
 ## Kernel patches carried
 

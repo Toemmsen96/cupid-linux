@@ -1,0 +1,331 @@
+From 1a43768ff63fe62b82182fdc271e6e5596277d28 Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 18:48:56 +0100
+Subject: [PATCH] ipa: libipa: af: Lens range and settle frames from the tuning
+ file
+
+The scan always covered the whole focus control range, from 0 to its
+maximum. Lens modules are calibrated for a part of it only: the Xiaomi
+12 main camera module stores infinity and macro positions of about 680
+and 3200 in its EEPROM, with a 0-4095 control, so a quarter of every
+sweep was spent where the lens can't focus anything.
+
+The statistics also lag the lens: the frame after a lens move was
+exposed while the lens was still moving, or before it moved. The
+hill climb then compared each position with the sharpness of an
+earlier one and stopped past the peak.
+
+Add optional keys to the Af tuning data:
+
+- lensMin, lensMax: the range to scan, clamped to the control range.
+  The search steps from the previous patch are scaled to this span.
+- fineStep: the step of the fine scan, e.g. to match the real
+  resolution of a lens driven with more bits than it has.
+- settleFrames: the number of frames whose statistics are skipped after
+  each lens move.
+
+Also fix the scan itself, which changes it for every camera:
+
+- The fine scan covers one coarse step on either side of the best
+  coarse position, where the peak must be, instead of 5 % of the lens
+  position on either side, which was up to 150 fine steps on a 12-bit
+  lens and too narrow near infinity. Its end is clamped to the scanned
+  range rather than to 1023, which cut the fine scan short on lenses
+  with a larger range.
+- The best position and maximum variance are updated on a new maximum
+  only. Updating them on any value within the 10 % tolerance let the
+  result drift past the peak on a gentle slope, up to the end of the
+  fine window.
+- The fine scan starts with the frame after the coarse scan completes,
+  not with the same frame, which was taken at the last coarse position.
+
+Signed-off-by: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+---
+ src/ipa/libipa/af.cpp             | 119 +++++++++++++++++++++++++-----
+ src/ipa/libipa/af.h               |  15 ++++
+ src/ipa/softisp/algorithms/af.cpp |   5 ++
+ src/ipa/softisp/algorithms/af.h   |   1 +
+ 4 files changed, 120 insertions(+), 20 deletions(-)
+
+diff --git a/src/ipa/libipa/af.cpp b/src/ipa/libipa/af.cpp
+index ce9e047..9f9ebb4 100644
+--- a/src/ipa/libipa/af.cpp
++++ b/src/ipa/libipa/af.cpp
+@@ -7,6 +7,9 @@
+ 
+ #include "af.h"
+ 
++#include <algorithm>
++#include <errno.h>
++
+ #include <linux/v4l2-controls.h>
+ 
+ namespace libcamera {
+@@ -56,15 +59,45 @@ static constexpr double kMaxChange = 0.5;
+ /* The numbers of frame to be ignored, before performing focus scan. */
+ static constexpr uint32_t kIgnoreFrame = 10;
+ 
+-/* Fine scan range 0 < kFineRange < 1 */
+-static constexpr double kFineRange = 0.05;
+-
+ AfAlgorithm::AfAlgorithm()
+ 	: focus_(0), bestFocus_(0), currentVariance_(0.0), previousVariance_(0.0),
+ 	  coarseCompleted_(false), fineCompleted_(false)
+ {
+ }
+ 
++/**
++ * \brief Initialise the algorithm from the tuning data
++ * \param[in] tuningData The tuning data of the Af algorithm
++ *
++ * All the keys are optional:
++ * - lensMin, lensMax: the range of lens positions to scan, in the units of
++ *   the V4L2 focus control. Lens modules are often calibrated for a part of
++ *   the actuator range only, from infinity to the macro distance. By default
++ *   the whole control range is scanned.
++ * - fineStep: the lens step of the fine scan, in the units of the V4L2 focus
++ *   control. By default it is scaled to the lens range like the coarse step.
++ * - settleFrames: the number of frames whose statistics are skipped after
++ *   each lens move, as they were exposed while the lens was still moving, or
++ *   before it moved. Defaults to 0.
++ *
++ * \return 0 on success, a negative error code otherwise
++ */
++int AfAlgorithm::init(const ValueNode &tuningData)
++{
++	lensMin_ = tuningData["lensMin"].get<uint32_t>();
++	lensMax_ = tuningData["lensMax"].get<uint32_t>();
++	fineStepTuning_ = tuningData["fineStep"].get<uint32_t>();
++	settleFrames_ = tuningData["settleFrames"].get<uint32_t>(0);
++
++	if (lensMin_ && lensMax_ && *lensMin_ >= *lensMax_) {
++		LOG(Af, Error) << "Invalid lens range " << *lensMin_
++			       << "-" << *lensMax_;
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
+ /**
+  * \fn AfAlgorithm::coarseCompleted()
+  * \brief Return whether the coarse autofocus scan is completed
+@@ -88,12 +121,15 @@ void AfAlgorithm::afCoarseScan(af::ActiveState &state)
+ 	if (afScan(state, coarseStep_)) {
+ 		coarseCompleted_ = true;
+ 		state.maxVariance = 0;
+-		focus_ = state.focus -
+-			 (state.focus * kFineRange);
++		/*
++		 * The peak lies within one coarse step of the best coarse
++		 * position: scan that window again with the fine step.
++		 */
++		const uint32_t best = state.focus;
++		focus_ = best > minStep_ + coarseStep_ ? best - coarseStep_ : minStep_;
+ 		state.focus = focus_;
+ 		previousVariance_ = 0;
+-		maxStep_ = std::clamp(focus_ + static_cast<uint32_t>((focus_ * kFineRange)),
+-				      0U, kMaxFocusSteps);
++		maxStep_ = std::min(best + coarseStep_, initMaxStep_);
+ 	}
+ }
+ 
+@@ -101,7 +137,8 @@ void AfAlgorithm::afCoarseScan(af::ActiveState &state)
+  * \brief AF fine scan
+  * \param[in] state The autofocus state
+  *
+- * Find an optimum lens position with moving 1 step for each search.
++ * Find an optimum lens position with the fine step, within one coarse step
++ * of the best coarse position.
+  */
+ void AfAlgorithm::afFineScan(af::ActiveState &state)
+ {
+@@ -129,8 +166,8 @@ void AfAlgorithm::afReset(af::ActiveState &state)
+ 		return;
+ 
+ 	state.maxVariance = 0;
+-	state.focus = 0;
+-	focus_ = 0;
++	state.focus = minStep_;
++	focus_ = minStep_;
+ 	state.stable = false;
+ 	ignoreCounter_ = kIgnoreFrame;
+ 	previousVariance_ = 0.0;
+@@ -168,12 +205,16 @@ bool AfAlgorithm::afScan(af::ActiveState &state, int min_step)
+ 			 * Positive and zero derivative:
+ 			 * The variance is still increasing. The focus could be
+ 			 * increased for the next comparison. Also, the max variance
+-			 * and previous focus value are updated.
++			 * and best focus value are updated on a new maximum only:
++			 * updating them on any value within the tolerance lets
++			 * the best focus drift past the peak on a gentle slope.
+ 			 */
+-			bestFocus_ = focus_;
++			if (currentVariance_ >= state.maxVariance) {
++				bestFocus_ = focus_;
++				state.maxVariance = currentVariance_;
++			}
+ 			focus_ += min_step;
+ 			state.focus = focus_;
+-			state.maxVariance = currentVariance_;
+ 		} else {
+ 			/*
+ 			 * Negative derivative:
+@@ -274,18 +315,36 @@ void AfAlgorithm::configure(af::ActiveState &state, const ControlInfoMap &lensCo
+ 			state.focus = static_cast<uint32_t>(focusInfo.def().get<int32_t>());
+ 	}
+ 
+-	maxStep_ = initMaxStep_;
++	/* Restrict the scan to the lens range from the tuning file. */
++	const uint32_t ctrlMax = initMaxStep_;
++	uint32_t ctrlMin = 0;
++	if (it != lensControls.end() && !it->second.min().isNone())
++		ctrlMin = static_cast<uint32_t>(std::max(it->second.min().get<int32_t>(), 0));
+ 
+-	LOG(Af, Debug) << "Configured focus parameters: max=" << initMaxStep_
+-		       << " focus=" << state.focus;
++	minStep_ = lensMin_ ? std::clamp(*lensMin_, std::min(ctrlMin, ctrlMax), ctrlMax) : 0;
++	if (lensMax_)
++		initMaxStep_ = std::clamp(*lensMax_, minStep_, ctrlMax);
++
++	maxStep_ = initMaxStep_;
++	focus_ = minStep_;
++	bestFocus_ = minStep_;
++	coarseCompleted_ = false;
++	fineCompleted_ = false;
++	settleCounter_ = 0;
+ 
+ 	/*
+ 	 * The search steps are tuned for a 10-bit (0-1023) VCM: scale them to
+-	 * the lens range, so that a 12-bit lens is not scanned four times as
++	 * the scanned range, so that a 12-bit lens is not scanned four times as
+ 	 * slowly.
+ 	 */
+-	coarseStep_ = std::max<uint32_t>(kCoarseSearchStep * initMaxStep_ / kMaxFocusSteps, 1);
+-	fineStep_ = std::max<uint32_t>(kFineSearchStep * initMaxStep_ / kMaxFocusSteps, 1);
++	const uint32_t span = initMaxStep_ - minStep_;
++	coarseStep_ = std::max<uint32_t>(kCoarseSearchStep * span / kMaxFocusSteps, 1);
++	fineStep_ = std::max<uint32_t>(fineStepTuning_.value_or(kFineSearchStep * span / kMaxFocusSteps), 1);
++
++	LOG(Af, Debug) << "Configured focus parameters: range=" << minStep_
++		       << "-" << initMaxStep_ << " focus=" << state.focus
++		       << " steps=" << coarseStep_ << "/" << fineStep_
++		       << " settle=" << settleFrames_;
+ }
+ 
+ /**
+@@ -307,15 +366,35 @@ void AfAlgorithm::process(af::ActiveState &state, double variance)
+ {
+ 	currentVariance_ = variance;
+ 
++	/*
++	 * Skip the statistics of the frames exposed while the lens was moving
++	 * to the position set last, or before it moved.
++	 */
++	if (settleCounter_) {
++		settleCounter_--;
++		return;
++	}
++
++	const uint32_t focus = state.focus;
++
+ 	if (!state.stable) {
+ 		afCoarseScan(state);
+-		afFineScan(state);
++		/*
++		 * The frame that completes the coarse scan doesn't show the
++		 * start position of the fine scan: start the fine scan with
++		 * the statistics of a later frame.
++		 */
++		if (state.focus == focus)
++			afFineScan(state);
+ 	} else {
+ 		if (afIsOutOfFocus(state))
+ 			afReset(state);
+ 		else
+ 			afIgnoreFrameReset();
+ 	}
++
++	if (state.focus != focus)
++		settleCounter_ = settleFrames_;
+ }
+ 
+ } /* namespace ipa */
+diff --git a/src/ipa/libipa/af.h b/src/ipa/libipa/af.h
+index 91df466..55a1218 100644
+--- a/src/ipa/libipa/af.h
++++ b/src/ipa/libipa/af.h
+@@ -7,6 +7,8 @@
+ 
+ #pragma once
+ 
++#include <optional>
++
+ #include <linux/v4l2-controls.h>
+ 
+ #include <libcamera/base/log.h>
+@@ -14,6 +16,8 @@
+ #include <libcamera/control_ids.h>
+ #include <libcamera/controls.h>
+ 
++#include "libcamera/internal/value_node.h"
++
+ namespace libcamera {
+ 
+ namespace ipa {
+@@ -40,6 +44,7 @@ class AfAlgorithm
+ public:
+ 	AfAlgorithm();
+ 
++	int init(const ValueNode &tuningData);
+ 	void configure(af::ActiveState &state, const ControlInfoMap &lensControls);
+ 	void process(af::ActiveState &state, double variance);
+ 	bool coarseCompleted() { return coarseCompleted_; }
+@@ -68,6 +73,16 @@ private:
+ 	uint32_t maxStep_;
+ 	/* Initial value of maxStep_ */
+ 	uint32_t initMaxStep_;
++	/* The lowest lens position scanned. */
++	uint32_t minStep_ = 0;
++	/* Lens range from the tuning file, if set. */
++	std::optional<uint32_t> lensMin_;
++	std::optional<uint32_t> lensMax_;
++	/* Fine scan step from the tuning file, if set. */
++	std::optional<uint32_t> fineStepTuning_;
++	/* Frames whose statistics are skipped after each lens move. */
++	uint32_t settleFrames_ = 0;
++	uint32_t settleCounter_ = 0;
+ 	uint32_t coarseStep_ = 30;
+ 	uint32_t fineStep_ = 1;
+ 	/* If the coarse scan completes, it is set to true. */
+diff --git a/src/ipa/softisp/algorithms/af.cpp b/src/ipa/softisp/algorithms/af.cpp
+index 83eb545..b518b0b 100644
+--- a/src/ipa/softisp/algorithms/af.cpp
++++ b/src/ipa/softisp/algorithms/af.cpp
+@@ -35,6 +35,11 @@ static constexpr double kMinLevel = 4.0;
+ /* Scale applied to the normalised contrast, so that the values are readable. */
+ static constexpr double kContrastScale = 1e6;
+ 
++int Af::init([[maybe_unused]] IPAContext &context, const ValueNode &tuningData)
++{
++	return afAlgo_.init(tuningData);
++}
++
+ int Af::configure(IPAContext &context, const IPAConfigInfo &configInfo)
+ {
+ 	/*
+diff --git a/src/ipa/softisp/algorithms/af.h b/src/ipa/softisp/algorithms/af.h
+index c17d00d..fe52293 100644
+--- a/src/ipa/softisp/algorithms/af.h
++++ b/src/ipa/softisp/algorithms/af.h
+@@ -24,6 +24,7 @@ public:
+ 	Af() = default;
+ 	~Af() = default;
+ 
++	int init(IPAContext &context, const ValueNode &tuningData) override;
+ 	int configure(IPAContext &context,
+ 		      const IPAConfigInfo &configInfo) override;
+ 	void process(IPAContext &context, const uint32_t frame,
+-- 
+2.56.1
+

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: CC0-1.0
 # Sony IMX766, Xiaomi 12 main camera (semco module).
 # Generated from the stock Chromatix tuning (com.qti.tuned.cupid_semco_imx766_wide):
+# AWB colour temperature curve from the refPtV1 white points,
 # colour matrices from cc13_ipe_v2 for CCT regions 2650-3350, 3600-4400, 4700-5300, 5800-10000 K,
 # lens shading from lsc41 (2400-3200, 3800-4300, 4800-6000 K regions, R/Gr/Gb/B 17x13 resampled
 # to 17x17, G = (Gr + Gb) / 2, R and B scaled so the table keeps the
@@ -13,7 +14,63 @@ version: 1
 algorithms:
   - BlackLevel:
   - Af:
+      # Lens range from the module EEPROM: infinity and macro (10 cm) DAC
+      # 170 and 802 in 10-bit units, about 680 and 3208 in the units of the
+      # 12-bit focus control, with a margin on both sides.
+      lensMin: 600
+      lensMax: 3300
+      # The lens is 10-bit, driven as 12-bit: 8 is 2 real steps.
+      fineStep: 8
+      # Frames exposed while the lens moves are skipped.
+      settleFrames: 2
   - Awb:
+      # Bayesian AWB along the stock white points (refPtV1: D75, D65,
+      # D50, A, horizon; 10000 K extrapolated), converted to gains for
+      # statistics taken before lens shading. A single frame mean is
+      # measured, so no lux priors; the search may leave the curve towards
+      # green as far as the stock fluorescent points (CW, TL84).
+      algorithm: bayes
+      AwbMode:
+        Auto:
+          lo: 2300
+          hi: 8000
+        Incandescent:
+          lo: 2300
+          hi: 3000
+        Tungsten:
+          lo: 3000
+          hi: 3500
+        Fluorescent:
+          lo: 3800
+          hi: 4700
+        Indoor:
+          lo: 3000
+          hi: 5000
+        Daylight:
+          lo: 5000
+          hi: 6500
+        Cloudy:
+          lo: 6500
+          hi: 8000
+      priors:
+        - lux: 0
+          ct: [ 2000, 13000 ]
+          probability: [ 1.0, 1.0 ]
+      colourGains:
+        - ct: 2300
+          gains: [ 1.1437, 3.6857 ]
+        - ct: 2850
+          gains: [ 1.3755, 3.0381 ]
+        - ct: 5000
+          gains: [ 2.0731, 1.8651 ]
+        - ct: 6500
+          gains: [ 2.4052, 1.6755 ]
+        - ct: 7500
+          gains: [ 2.5622, 1.5894 ]
+        - ct: 10000
+          gains: [ 2.8528, 1.4539 ]
+      transversePos: 0.02
+      transverseNeg: 0.11
   - Lsc:
       type: table
       sets:
