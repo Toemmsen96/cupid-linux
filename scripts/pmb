@@ -1,4 +1,32 @@
 #!/bin/sh
 # Run pmbootstrap with the cupid config: scripts/pmb <pmbootstrap args>
 . "$(dirname "$0")/env.sh"
-exec pmbootstrap -c "$CFG" "$@"
+[ "$1" = build ] || exec pmbootstrap -c "$CFG" "$@"
+
+pmbootstrap -c "$CFG" "$@" && exit 0
+rc=$?
+
+# systemd-edge's systemd 262.2 ships sbin/init next to usr/sbin/init and
+# bin/udevadm next to usr/bin/udevadm. In the merged-/usr buildroot both
+# names are one file, apk fails to commit the second one, marks systemd and
+# systemd-udevd broken and exits 2, so every strict build of a package that
+# pulls in systemd (libcamera through eudev-dev) stops while installing its
+# build dependencies. The files are in place: clear the broken flags and
+# build once more without recreating the buildroot (--lax).
+retry=
+for root in "$WORK"/chroot_buildroot_*; do
+	db="$root/lib/apk/db/installed"
+	[ -f "$db" ] || continue
+	broken=$(awk '/^P:/ { p = substr($0, 3) } /^f:/ { print p }' "$db" | sort -u | tr '\n' ' ')
+	case "$broken" in
+	"systemd " | "systemd-udevd " | "systemd systemd-udevd ") ;;
+	*) continue ;;
+	esac
+	[ -e "$root/usr/bin/init" ] && [ -x "$root/usr/bin/udevadm" ] || continue
+	echo "scripts/pmb: clearing apk's broken flag on: $broken($root)" >&2
+	sudo sed -i '/^f:f$/d' "$db" && retry=1
+done
+[ -n "$retry" ] || exit $rc
+
+shift
+exec pmbootstrap -c "$CFG" build --lax "$@"

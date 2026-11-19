@@ -42,6 +42,14 @@ Useful variants:
 | `scripts/pmb build --arch aarch64 libcamera` | rebuild one overlay package (`--arch` matters for "arch all" packages) |
 | `CUPID_PASSWORD=secret scripts/build.sh` | user password in the image (else pmbootstrap asks; can live in `cupid.env`) |
 
+`scripts/pmb build` works around a systemd-edge packaging bug (systemd
+262.2 ships `sbin/init` and `usr/sbin/init`, `bin/udevadm` and
+`usr/bin/udevadm`, one file each in the merged-/usr buildroot): apk then
+flags systemd broken and exits 2 while installing build dependencies
+(libcamera pulls systemd in through `eudev-dev`). When those are the only
+broken packages and their files are in place, the wrapper clears the flag
+(sudo) and builds once more with `--lax`.
+
 The kernel variant and UI are stored in the config, so `scripts/pmb config
 kernel next` and `scripts/pmb config ui phosh` work as well.
 
