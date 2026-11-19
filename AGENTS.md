@@ -66,6 +66,10 @@ postmarketOS (and an Arch Linux ARM variant) for the Xiaomi 12 "cupid"
   0 dB, never higher, and there is no speaker protection. Analyse the result
   with a microphone recording rather than asking someone to listen.
 - Do not `pkill -f` with patterns that can match the SSH command itself.
+- The login shell may be zsh, which runs SSH commands too: it does not split
+  unquoted `$vars` and fails on globs without matches. Send anything beyond
+  simple commands through `ssh "$CUPID_PHONE" sh -s` (as `phone-build.sh`
+  does).
 - For modem and call tests the developer allows SMS and calls to
   `$CUPID_TEST_NUMBER`.
 

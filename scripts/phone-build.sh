@@ -43,7 +43,10 @@ for pkg in "$@"; do
 done
 
 if [ -n "$install" ]; then
-	# Every subpackage of the built packages that is installed now.
-	ssh "$PHONE" 'sudo apk add -u --no-network --repository ~/.local/share/abuild/aports $(for p in '"$*"'; do
-		. ~/aports/$p/APKBUILD 2>/dev/null; for s in $pkgname $subpackages; do s=${s%%:*}; apk info -e $s >/dev/null && echo $s; done; done)'
+	# Every subpackage of the built packages that is installed now. Run by sh
+	# whatever the login shell is (zsh would not split $subpackages).
+	ssh "$PHONE" sh -s -- "$@" <<'EOF'
+sudo apk add -u --no-network --repository ~/.local/share/abuild/aports $(for p in "$@"; do
+	. ~/aports/$p/APKBUILD 2>/dev/null; for s in $pkgname $subpackages; do s=${s%%:*}; apk info -e $s >/dev/null && echo $s; done; done)
+EOF
 fi
