@@ -26,7 +26,7 @@ fallbacks.
 | Touchscreen | broken | should work | works | patches 0002/0003; PIN entry on the greeter works |
 | 3D acceleration | works | works | works | Adreno 730, `a730_sqe`/`gmu_gen70000` load, phosh renders |
 | Audio | broken | partial | headphones, USB-C audio, speakers (7.3) | headphone/codec-DMA path and USB-C audio. Internal speakers (two CS35L41 on tertiary TDM, 7.3 only: 6.13/6.17 lack the legacy AudioReach TDM endpoint) work: TDM lane 1 and inverted frame sync (kernel r16, device r18), see [Speakers](#speakers-73). Call audio (voice path through the DSP) not done: voice graphs open and start and the modem starts the vocoder (EVS 32 kHz), but no audio yet. Device r24 packages the path: the voice firmware is generated at boot from the phone's own stock calibration, and the UCM "Voice Call" verb (earpiece = top amplifier, handset microphone) starts the voice graphs when callaudiod switches to it (verified without a call); no speakerphone. See [09-call-audio](09-call-audio.md) |
-| Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | all four in apps (7.3) | the 6.13 tree has no SM8450 CAMSS; 6.17 streams the OV13B10 ultra-wide. On 7.3 all four sensors stream (OV32B40 front, S5K5E9 telemacro, IMX766 main over C-PHY, OV13B10 ultra-wide) and work in apps through libcamera's simple pipeline with the software ISP (`pmaports/temp/libcamera`: sensor helpers, binned modes, autofocus on the main and macro cameras through the AK7375/DW9800K lens drivers, colour matrices and lens shading from the stock Chromatix tuning). See [Cameras](#cameras) and [Cameras in apps](#cameras-in-apps-libcamera). No hardware ISP; OIS held centred by the kernel (pending, r24, see [Main camera](#main-camera-73)); main camera shows streaks while the lens is powered (intermittent, open) |
+| Camera | broken | no (6.13); ultra-wide on 6.17; all four on 7.3 | all four in apps (7.3) | the 6.13 tree has no SM8450 CAMSS; 6.17 streams the OV13B10 ultra-wide. On 7.3 all four sensors stream (OV32B40 front, S5K5E9 telemacro, IMX766 main over C-PHY, OV13B10 ultra-wide) and work in apps through libcamera's simple pipeline with the software ISP (`pmaports/temp/libcamera`: sensor helpers, binned modes, autofocus on the main and macro cameras through the AK7375/DW9800K lens drivers, colour matrices and lens shading from the stock Chromatix tuning). See [Cameras](#cameras) and [Cameras in apps](#cameras-in-apps-libcamera). No hardware ISP; OIS held centred by the kernel (r24, see [Main camera](#main-camera-73)); main camera shows streaks while the lens is powered (intermittent, open) |
 | Camera and microphone indicators | | | works (phosh 0.59) | orange icons in the top bar while an app uses a camera or records audio, as in GNOME. Camera: phosh 0.59's `camera-status-icon` (running PipeWire camera nodes, which the libcamera cameras are; enabled by default). Microphone: `pmaports/temp/phosh-plugin-mic-status-icon`, an out-of-tree phosh plugin watching PulseAudio source outputs (pmOS phosh runs PulseAudio; PipeWire carries only video). Monitors of outputs, peak meters and volume controls (`org.gnome.VolumeControl`, pavucontrol) do not count, as in GNOME Shell. Verified 2026-11-19 with Snapshot and with `parecord` (icon on while recording, off 0.5 s after) |
 | Camera flash | works | works | works (7.3) | `pm8350c_flash`, `white:flash` LED: torch verified with the main camera (frame brightness 8 -> 171) |
 | IR TX | works | works | | `ir-spi-led` on spi13, `CONFIG_IR_SPI` |
@@ -358,8 +358,7 @@ decodes as RGGB.
 The module also carries a ROHM BU24618 OIS controller at 0x3e and a
 16 KiB EEPROM at 0x50 (16-bit addresses) on the same bus, both powered with
 the sensor. The BU24618 runs from RAM: without a firmware download its
-servo is off and the lens rests where it falls. Kernel r24 (patch 0043,
-pending) has the IMX766 driver bring it up at the first stream start of
+servo is off and the lens rests where it falls. Kernel r24 (patch 0043) has the IMX766 driver bring it up at the first stream start of
 each power cycle, as the stock CamX module does
 (`com.qti.sensormodule.cupid_semco_imx766_wide.bin`): download start
 (0xF010), the stock images `cupid_imx766_bu24618_ois.prog/.coeff/.mem`
@@ -372,7 +371,11 @@ takes at most 11 bytes per write message and 12 per read, so the download
 goes out in 9-byte pieces (~0.3 s). Verified from userspace on
 2026-11-19 with `scripts/ois-bu24618.py` while the camera streamed:
 checksum and status as expected, the lens moved to its centre (frame shift)
-and the image got ~30 % sharper (mean gradient energy). The EEPROM also
+and the image got ~30 % sharper (mean gradient energy). With r24
+installed (2026-11-20) the driver brings it up at stream start without
+errors (it warns on any failed step) and streams at 30 fps with
+`ois_mode` centre or off; whether centring removes the streaks still
+needs a real scene. The EEPROM also
 holds the autofocus calibration (Xiaomi layout: AF flag 0x27, macro
 distance/DAC 0x2B/0x2D = 10 cm/802, infinity 0x2F/0x31 = 1000 cm/170, in
 the AK7314's 10-bit units); `scripts/i2c-dump16.py` dumps it.
@@ -427,7 +430,14 @@ Colour and lens shading tuning (pkgrel 6): `ov32b40.yaml`, `imx766.yaml` and
 `s5k5e9.yaml` carry the stock Chromatix colour matrices (cc13, per CCT
 region of the normal-light trigger) and lens shading tables (lsc41,
 17x13 resampled to libcamera's 17x17). `scripts/camx-tuning.py` regenerates
-them from `vendor/lib64/camera/com.qti.tuned.cupid_*.bin`. Things learned:
+them from `vendor/lib64/camera/com.qti.tuned.cupid_*.bin`. The ultra-wide
+got `ov13b10.yaml` the same way in pkgrel 8 (before it ran on
+`uncalibrated.yaml`). Things learned:
+
+- Each bin holds many CCT trigger lists (one per gain and lux region); the
+  one used is the first with three or more CCT regions whose payloads pass
+  the generator's sanity checks. That rule reproduces the hand-picked lists
+  of the first three cameras.
 
 - Chromatix payloads are shared between regions; resolve each region's data
   symbol through the symbol table instead of counting tables in order.
@@ -441,7 +451,10 @@ them from `vendor/lib64/camera/com.qti.tuned.cupid_*.bin`. Things learned:
   4000 and 6500 K tables are used.
 
 Measured corner/centre brightness on a ceiling: main 0.56 to 1.00, macro
-0.81 to 0.94, front 0.5 to 0.95. The IMX766 corners need more than the
+0.81 to 0.94, front 0.5 to 0.95. Ultra-wide (2026-11-20, dim room under
+warm light): white paper went from a blue-grey R/G 1.09, B/G 0.95 (grey
+world) to R/G 1.34, B/G 0.71, close to the main camera's 1.28/0.85 on the
+same paper, and the dark corners opened up. The IMX766 corners need more than the
 3.98 maximum gain and stay slightly under-corrected in the extreme corners.
 
 White balance (pkgrel 7, not yet checked on the phone): libipa's Bayesian

@@ -207,7 +207,12 @@ CAMS = [
                     'fineStep: 8',
                     '# Frames exposed while the lens moves are skipped.',
                     'settleFrames: 2']),
+    dict(name='ov13b10', bin='cupid_sunny_ov13b10_ultra', desc=['OmniVision OV13B10, Xiaomi 12 ultra-wide camera (sunny module).'],
+         ccm=(0x5d453e, 5), lsc=(0x5abb7a, 3, (2850, 4000, 6500))),
 ]
+# The lists above are the first "trigger" list in each bin with three or more
+# CCT regions whose payloads pass ccm_at / lsc_at (later lists repeat them for
+# other gain and lux regions).
 if __name__ == '__main__':
     for cam in CAMS:
         open(os.path.join(sys.argv[2], cam['name'] + '.yaml'), 'w').write(build(cam))
