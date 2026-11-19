@@ -1,0 +1,48 @@
+pkgname=phosh-plugin-mic-status-icon
+pkgver=0.1
+pkgrel=1
+# cupid-linux package, not an overlay: a phosh status icon shown while an
+# application records audio, like phosh 0.59's camera indicator. Built out
+# of tree; phosh's release tarball only provides status-icon.h. Watches
+# PulseAudio source outputs (PulseAudio or pipewire-pulse), as GNOME Shell.
+_phoshver=0.59.0
+pkgdesc="Phosh status icon shown while the microphone is in use"
+url="https://gitlab.gnome.org/World/Phosh/phosh"
+arch="all !armhf"
+license="GPL-3.0-or-later"
+depends="phosh"
+install_if="phosh"
+makedepends="gtk+3.0-dev pulseaudio-dev"
+source="https://sources.phosh.mobi/releases/phosh/phosh-$_phoshver.tar.xz
+	mic-status-icon.c
+	mic-status-icon.plugin
+	50_phosh-mic-status-icon.gschema.override
+	"
+builddir="$srcdir"
+options="!check" # no tests; checked on the phone
+
+build() {
+	# phosh resolves phosh_status_icon_get_type when it loads the module.
+	# shellcheck disable=SC2046
+	${CC:-cc} $CFLAGS -fPIC -shared -Wall -Wextra -Wno-unused-parameter \
+		-I"$srcdir/phosh-$_phoshver/src" \
+		$(pkg-config --cflags gtk+-3.0 libpulse-mainloop-glib) \
+		-o libphosh-plugin-mic-status-icon.so "$srcdir"/mic-status-icon.c \
+		$LDFLAGS $(pkg-config --libs gtk+-3.0 libpulse-mainloop-glib)
+}
+
+package() {
+	install -Dm755 libphosh-plugin-mic-status-icon.so \
+		-t "$pkgdir"/usr/lib/phosh/plugins/
+	install -Dm644 "$srcdir"/mic-status-icon.plugin \
+		-t "$pkgdir"/usr/lib/phosh/plugins/
+	install -Dm644 "$srcdir"/50_phosh-mic-status-icon.gschema.override \
+		-t "$pkgdir"/usr/share/glib-2.0/schemas/
+}
+
+sha512sums="
+dbbe0149092f350c7eda01c12a4729c7b36e38ae782ed79adcf30825f8a0bf06efc3b7d40ba1d50e039427fc6ef97dd6663538882cb8e3d1ae426a0e3a9aadac  phosh-0.59.0.tar.xz
+f657b5522d5cb38ad2a10840e62d7c3ea476822a550a4cd43617203190f1a5c2b0426741c126caa4810d5cd0bffa41d4fff289545e74157ce4a52c35a5dcd959  mic-status-icon.c
+2bc8076dee3c9e34c921053f0bbd938e6a23d216b63b873fac208eb9f517cc5878e36b7a20f38df83859bdc030da4d507ec6f182b127135f78459c3e006361d3  mic-status-icon.plugin
+142ca4e21d44563dd7b58e0e5275ddfaaad6c5148c4cc8f114f6e7a4c4c704e4873746d7e21c961925019c947678b9ec90919264f38143ab783933ec69850da2  50_phosh-mic-status-icon.gschema.override
+"

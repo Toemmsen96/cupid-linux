@@ -42,8 +42,9 @@ postmarketOS (and an Arch Linux ARM variant) for the Xiaomi 12 "cupid"
 
 - `device/testing/`: the device package, firmware, and three kernels. The
   phone runs `linux-postmarketos-qcom-sm8450-cupid-mainline` (7.3).
-  `temp/` holds overlays of pmaports `temp/` packages (libcamera,
-  ModemManager). `scripts/sync.sh` copies all of this into `work/pmaports`.
+  `temp/` holds overlays of upstream packages (libcamera, ModemManager,
+  hexagonrpcd) and our phosh microphone indicator plugin. `scripts/sync.sh`
+  copies all of this into `work/pmaports`.
 - Every change to a package bumps `pkgrel`. Kernel patches are numbered
   `00NN-subsystem-what.patch` and listed in `source=`.
 - `sha512sums` are paired with `source=` **by position**, not by name: keep

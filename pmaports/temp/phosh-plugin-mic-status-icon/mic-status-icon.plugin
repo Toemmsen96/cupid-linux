@@ -1,0 +1,7 @@
+[Plugin]
+Id=mic-status-icon
+Name=Microphone Status Icon
+Types=status-icon;
+Comment=A status icon that is shown while an application records audio.
+Plugin=/usr/lib/phosh/plugins/libphosh-plugin-mic-status-icon.so
+Icon=audio-input-microphone-symbolic

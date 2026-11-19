@@ -1,0 +1,3 @@
+# Show the microphone indicator next to phosh's camera indicator.
+[mobi.phosh.shell.plugins:Phosh]
+status-icons=['camera-status-icon', 'mic-status-icon']

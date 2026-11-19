@@ -25,6 +25,16 @@ Serial console is the only early-boot channel: UART pads are on the board
 `deviceinfo_kernel_cmdline`. ramoops does not survive a reset on this platform
 (XBL scrubs DRAM).
 
+## Console instead of the login screen
+
+`systemctl status greetd` shows `start-limit-hit`, and
+`journalctl -b _UID=110 | grep phrog` shows `Settings schema 'sm.puri.phosh'
+is not installed` before an abort. The phrog greeter links `libphosh`; phosh
+0.59 renamed its schemas to `mobi.phosh`, so upgrading only `phosh` (and
+`phosh-schemas`) leaves phrog on the old `libphosh`. Upgrade them together
+(`apk upgrade`, or `apk add -u libphosh`), then
+`systemctl reset-failed greetd && systemctl restart greetd`.
+
 ## Crashes under memory load
 
 The phone reboots while something uses a lot of memory or writes large

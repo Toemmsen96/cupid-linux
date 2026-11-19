@@ -42,7 +42,7 @@ First booted on a Xiaomi 12 (2201123G, EEA, HyperOS 3 firmware) on
 
 | Works (7.3) | Partial / open | Not working |
 |---|---|---|
-| boot, USB networking + SSH, storage, display (120 Hz, no corruption on 7.3), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery, USB-PD charging (~17 W), mobile data (LTE/5G), SMS, VoLTE calls (connect both ways), GPS (standalone), all four cameras in apps (libcamera software ISP, autofocus, stock colour/shading tuning), camera flash, accelerometer, light sensor, compass, auto-rotation, haptics, internal speakers, USB-C headphones, zram swap | call audio (calls connect silently); SMS received at the login screen land in the greeter's Chatty; main camera streaks while the lens is powered; no proximity (stock uses ultrasound) | fingerprint (TrustZone app; feasible with QTEE, see docs/08-fingerprint.md); fast charging (vendor charge pumps); OIS; NFC, IR and FDE untested; USB OTG switches to host mode but enumerates nothing |
+| boot, USB networking + SSH, storage, display (120 Hz, no corruption on 7.3), touch, GPU (Adreno 730, phosh), WiFi, Bluetooth, battery, USB-PD charging (~17 W), mobile data (LTE/5G), SMS, VoLTE calls (connect both ways), GPS (standalone), all four cameras in apps (libcamera software ISP, autofocus, stock colour/shading tuning), camera and microphone in-use indicators, camera flash, accelerometer, light sensor, compass, auto-rotation, haptics, internal speakers, USB-C headphones, zram swap | call audio (calls connect silently); SMS received at the login screen land in the greeter's Chatty; main camera streaks while the lens is powered; no proximity (stock uses ultrasound) | fingerprint (TrustZone app; feasible with QTEE, see docs/08-fingerprint.md); fast charging (vendor charge pumps); OIS; NFC, IR and FDE untested; USB OTG switches to host mode but enumerates nothing |
 
 The details, measurements and what was ruled out are in
 [docs/05-hardware-status.md](docs/05-hardware-status.md); fixes for problems
@@ -76,6 +76,7 @@ pins a 2023 kernel that predates the cupid devicetree. This repository:
 | Thermal | 85 C passive cooling maps for all CPU zones (`sm8450.dtsi` has none, so the SoC could only hit its critical trip). | devicetree |
 | A/B slots | `soc-qcom-qbootctl` marks the slot successful; the previous cupid package never built its openrc subpackage, so ABL rolled back after about seven boots. | device package |
 | Phosh | Display scale 2, punch-hole cutout definition for gmobile. | device package `-phosh` |
+| Privacy indicators | phosh 0.59 shows a camera icon while a camera is in use; a phosh plugin adds the microphone icon (recording streams, from PulseAudio as in GNOME Shell). | `pmaports/temp/phosh-plugin-mic-status-icon` |
 | Firmware | Fetched from GitHub instead of git.mainlining.org (which has been returning 502); the modem blob is included in GitHub's archive despite being in LFS. | `firmware-xiaomi-cupid` |
 
 Not addressed yet: fingerprint (plan in [docs/08-fingerprint.md](docs/08-fingerprint.md)), FM, fast charging (vendor
@@ -92,7 +93,8 @@ pmaports/device/testing/
   linux-postmarketos-qcom-sm8450-cupid/   6.13-rc3 kernel: config, devicetree, patches
   linux-postmarketos-qcom-sm8450-cupid-next/  6.17-rc1 kernel (display, ultra-wide camera)
   linux-postmarketos-qcom-sm8450-cupid-mainline/  Linux 7.3 from kernel.org + cupid patches
-pmaports/temp/   overlays of upstream packages: libcamera (cameras), modemmanager (GPS)
+pmaports/temp/   overlays of upstream packages: libcamera (cameras), modemmanager (GPS),
+                 hexagonrpcd (audio PD); phosh-plugin-mic-status-icon (microphone indicator)
 scripts/      setup, sync, build, flash, stock dump, sdcard backup, devicetree check, pmb wrapper,
               camx-sensormodule.py / camx-tuning.py (stock camera module and tuning decoders)
 docs/         prerequisites, build, install, troubleshooting, hardware status, Arch, firmware
