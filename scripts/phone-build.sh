@@ -26,7 +26,8 @@ for pkg in "$@"; do
 	done
 	[ -d "$d" ] || { echo "no package directory for $pkg" >&2; exit 1; }
 	echo "== $pkg"
-	tar c -C "$(dirname "$d")" "$pkg" | ssh "$PHONE" \
+	# -h: symlinks into scripts/ (device package) go over as files.
+	tar ch -C "$(dirname "$d")" "$pkg" | ssh "$PHONE" \
 		"mkdir -p ~/aports && cd ~/aports && rm -rf '$pkg' && tar x"
 	# A system unit, not the SSH session: logind kills a session's
 	# processes when it ends, so a dropped connection would end the build.

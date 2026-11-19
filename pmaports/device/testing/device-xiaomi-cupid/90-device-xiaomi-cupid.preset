@@ -2,3 +2,4 @@ enable cupid-sensor-registry.service
 enable hexagonrpcd-sdsp.service
 enable cupid-modem-config.service
 enable hexagonrpcd-adsp-audiopd.service
+enable cupid-voice-firmware.service

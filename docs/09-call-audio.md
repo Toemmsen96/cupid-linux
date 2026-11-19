@@ -161,7 +161,7 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   played through the Linux speaker stream during a call go out through the
   voice TX path. Keep the amplifiers at `Digital PCM Volume` 625.
 
-## State (2026-11-17)
+## State (2026-11-20)
 
 - ECNS: the TX processing subgraph 0x3e fails to open only because of
   the ECNS module 0x07001031, which the ADSP loads as
@@ -194,9 +194,30 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   and the far end heard at most "something very quiet" of the beeps. The
   VCPM vocoder loopback (`VCPM_PARAM_ID_VOC_PKT_LOOPBACK_DELAY`, loopback
   VSID 0x12006000) produced nothing without a call.
-- Next: a call with the kernel front end (stock graphs with ECNS, full calibration), louder beeps; then a UCM
-  "Voice Call" verb that sets the switch, and a service that generates
-  the firmware file from the phone's own vendor partition.
+- Packaged (device r24): `cupid-voice-firmware.service` generates
+  `/lib/firmware/updates/qcom/sm8450/Xiaomi-12-voice.bin` at boot from the
+  phone's own ACDB (stock `vendor` partition, mapped by the initramfs,
+  mounted read-only in the unit's private namespace) with `voicecall.py
+  build ... handset` and `firmware` (stock graphs with ECNS, full
+  calibration through shared memory). The device package ships the tools
+  under `/usr/share/cupid-voicecall/` (symlinked from `scripts/` into the
+  package directory). It reruns only when the ACDB or the tools change,
+  and the result matches the file built by hand. The UCM "Voice Call" verb
+  (`VoiceCall.conf`) keeps the playback PCM on the amplifiers, mutes the
+  bottom one (earpiece = top amplifier, as stock), opens the handset
+  microphone and turns on `Voice Call Switch`. callaudiod picks it as the
+  voice profile when a call starts; with pmOS's idle-suspend workaround
+  keeping the sink and source open the kernel starts the voice graphs
+  (verified 2026-11-20 without a call: `callaudiocli -m 1` plus unloading
+  `module-suspend-on-idle` gives "voice call graphs started", `-m 0` stops
+  them and returns to HiFi).
+- No speakerphone: stock's speaker graph has its own calibration and
+  echo cancellation, and PulseAudio 17 turns UCM devices sharing a PCM into
+  separate profiles, while callaudiod's speaker toggle only switches ports
+  of one sink ("EnableSpeaker unsuccessful").
+- Next: a test call through the normal path (Calls app, callaudiod,
+  generated firmware), recorded through the microphone splitter, to see
+  whether audio passes in either direction.
 - Practical notes: without a login, ModemManager voice calls need root
   (polkit); `mmcli -o` needs the full object path
   (`/org/freedesktop/ModemManager1/Call/N`, the short form crashes mmcli).

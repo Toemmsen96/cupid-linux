@@ -3,9 +3,10 @@
 pkgname=device-xiaomi-cupid
 pkgdesc="Xiaomi 12"
 pkgver=2
-pkgrel=23
+pkgrel=24
 url="https://postmarketos.org"
-license="MIT"
+# voicecall.py, acdb.py, vcpm_cal.py: GPL-3.0-or-later
+license="MIT AND GPL-3.0-or-later"
 arch="aarch64"
 options="!check !archcheck"
 depends="
@@ -67,6 +68,13 @@ source="
 	cupid-modem-config.service
 	90-device-xiaomi-cupid.preset
 	81-libssc-xiaomi-cupid.rules
+	VoiceCall.conf
+	cupid-voice-firmware.sh
+	cupid-voice-firmware.service
+	voicecall.py
+	acdb.py
+	vcpm_cal.py
+	names.json
 	audioreach-topology-$_tplg_commit.tar.gz::https://github.com/linux-msm/audioreach-topology/archive/$_tplg_commit.tar.gz
 	Xiaomi-12.m4
 	module_sal.m4
@@ -115,6 +123,8 @@ package() {
 		"$pkgdir"/usr/share/alsa/ucm2/conf.d/sm8450/Xiaomi-12.conf
 	install -Dm644 "$srcdir"/HiFi.conf \
 		"$pkgdir"/usr/share/alsa/ucm2/Qualcomm/sm8450/Cupid/HiFi.conf
+	install -Dm644 "$srcdir"/VoiceCall.conf \
+		"$pkgdir"/usr/share/alsa/ucm2/Qualcomm/sm8450/Cupid/VoiceCall.conf
 
 	# ADSP topology: the sound card requests qcom/sm8450/Xiaomi-12-tplg.bin
 	# and tears itself down without it. Built from Xiaomi-12.m4: the SM8450
@@ -193,6 +203,21 @@ systemd() {
 		"$subpkgdir"/usr/libexec/cupid-modem-config
 	install -Dm644 "$srcdir"/cupid-modem-config.service \
 		"$subpkgdir"/usr/lib/systemd/system/cupid-modem-config.service
+	# Generates the voice call firmware (kernel 0042) from the stock ACDB on
+	# the vendor partition at boot; enabled by the preset. The tools are
+	# scripts/voicecall and scripts/acdb of cupid-linux, laid out the same
+	# way (voicecall.py finds acdb/ next to its own directory).
+	install -Dm755 "$srcdir"/cupid-voice-firmware.sh \
+		"$subpkgdir"/usr/libexec/cupid-voice-firmware
+	install -Dm644 "$srcdir"/cupid-voice-firmware.service \
+		"$subpkgdir"/usr/lib/systemd/system/cupid-voice-firmware.service
+	install -Dm644 "$srcdir"/voicecall.py \
+		"$subpkgdir"/usr/share/cupid-voicecall/voicecall/voicecall.py
+	local f
+	for f in acdb.py vcpm_cal.py names.json; do
+		install -Dm644 "$srcdir"/$f \
+			"$subpkgdir"/usr/share/cupid-voicecall/acdb/$f
+	done
 	install -Dm644 "$srcdir"/90-device-xiaomi-cupid.preset \
 		"$subpkgdir"/usr/lib/systemd/system-preset/90-device-xiaomi-cupid.preset
 }
@@ -202,7 +227,7 @@ c4dc2a484216bf3fce28913f7d94ceb0a229f5c968fb2d3c0c1703692c45fdb21223522aa30d22d6
 8aa9687e7a0c832967d123fdea4307e75b9368d3893ac66fd8c10ab0649a1e977b6a227e1427200940b25b42c85af627ba379cdb7ad120ad32961328fc2d91a2  modules-initfs
 da071f59a4d0c7ae01b1890141902000673f4502009585f62ff1f178eb5f69237b2c3ce04d9f88cd120e21c6f64e2b3837af682313582002cf9b38e3a59a03f4  cupid-modules.conf
 533195caa6ecf1ba8d23d15f29dee6f794c0532a31746f3ede44b7c070e1381ba9148d044e481cfc0baf3239762942aa1974d8d6be457af2ec11b337d10433dc  wifi-powersave-off.conf
-6eec04107fb2e920a33d2f89d21a4000d00621713b724beeca18fdcd099d9f45f3391f3f8a1cde6648da450c56808a2a0280a04da806086679d9e9100998a266  Xiaomi-12.conf
+f4a891c655dde5bad6fde08a074b25746cbb21bfc8438d67da802b64ddedd4704d439bba322b672fe0dbe8217ef87c85daad315cff85fd22613ce9fbae69f9e2  Xiaomi-12.conf
 68cd7f5cb7fad7e9082524e55edcbf6b1a54e6e6cff7700b59676f78ab5d4383930607e36d64262ad2979c060c3ab4cb68ee253694af53ef3dcd5d9fd92b2236  HiFi.conf
 608edb8c174d5c73bbd88d1367a55dff95cbbdecaf089fc351c950f008eb987d2b6b2280a053b45d754f564912d4769632740f4783d409141668b5a029d57d25  phoc.ini
 a3a1515987fa3e8ce2c67fdc13ed21a837c0d1d420ad4b51eb23a6fc799b8c3dd4e12d8f8bcf846283ecd898e3a6c9c5cec13def5ef3a97a7ff5d3a00cdf2884  xiaomi-cupid.json
@@ -214,8 +239,15 @@ c232f4ed77bef4f82b9512e5284c4ec1718f5a6b21bdd5382224d13140cdcae4d4a9c6da8e06d58f
 789c3be3bc9c288fde49a6568e7175759ab068bb73fac134c76b755dacdc9e0540ee03a504586d0c661094e5344a3c220bd6f5c6143da8ecf45a32fb3f146409  cupid-sensor-registry.service
 8d572bf4aecd868c7587f4d8196ccfe2d06d1a0fedc57422be2bd3d2bc1ef2688be7d5a2f6ebeddfa900ca2cb2707e5ce626d7e1e0ef47a973dd3a26cb3223b9  cupid-modem-config.py
 9b7587619d5711041e6ceed0440c2ec7d0e8bfbb24ce5ea55ea609388e7727db26ac219d185405089ac6b288c7dbba2c0c2f708851a548de7e6de96cc2e2e1d9  cupid-modem-config.service
-949ef197d019d6705bc8d7667f083580b6a342c4006f412bbda03c7682bf87bf3509356b3b75fa34e333f24bf66c98101339041a973d4f40d653bf8c3998ec01  90-device-xiaomi-cupid.preset
+6d3643a08ce2aa75ed775eee083f95793e30a7047b3468c3850e54fa1754df6f625e9a14322de86ed4f416e96c7b77529744041f4540bad8d31e0d1aa481e172  90-device-xiaomi-cupid.preset
 2f47bcd412f51054f38642c458ca6811de5096630305335ac82c70dbd742ba4a6034154054d042f834250651618823e875f8f70f7fe027ed3dc90b626fe49270  81-libssc-xiaomi-cupid.rules
+26c56ae7653728d7d383c9f62f3af58b3df50b6406551d977c1f12b20f17a339dc3bf2e9964a695bd87ccb5d4a5c55318e831b9a903444c512b4d1d62f80a16e  VoiceCall.conf
+aa1965b5bed279fecbd53d0d12a3a83720926ca1bb6e242e32f55cfbcedd2e79fd92b778852bc368893f31b311da05507cd97a812c2f14662aaf2263377cdc61  cupid-voice-firmware.sh
+04324118964074077a1c54ef93834b0aeaf7b6519cf1154b985d15eb90ffb6a6f94aa3b2c92c72b401eaa0d228403c2ff678e42ef84cf8cc120e9ae5f6cd17c4  cupid-voice-firmware.service
+507e1197a5849c627ae066daf38fb21c8e130746817fbff48280cebfffa89149b01f88ac87b8e084f6baa8fe221fd06502dc3d4a3a4603832640d6aa059edf5a  voicecall.py
+d2461b8a424e43e159d460c2c89eec872d7b727a7d4105a26c74e7c6d474df1a95a45ccea7992d02756b8d3aacb133a678da7529796b1dfa5e93b50fc31e9445  acdb.py
+47d1f375205c792a9bd9767341dc5a31ff249e5dfdc9402b23b863b564790a844caca15d5452e15357ea6be1d663838ef514b2dde70013226322b5644b9695e6  vcpm_cal.py
+6f59c7dc09d9e7ef0130086c9f5010cb42f2e9aadf44918836ec72616f98cdf0423f2f7e4f5423f62b1c959a49c1d446c97a3327c2cf422e7f347d3044226a39  names.json
 6c33f96ca1b9a127758bf8f9ff2df087c015bfae1f8503ec2d2601f952ce957eb9642cfbfc0df80db3fda8cd445537f80e3f903c2c681f4e5abdd3d8fb2a73d6  audioreach-topology-d6bb205aca5f4b8fa6b2f44cf8b5f6a081cbf037.tar.gz
 05e8be885bd4e1d25c26d8cc5e59f1804e6a5897209fb86cc47c0c9a8433d7b6450a7d6b2e8bf7c06c8d20408a03a6dfbaaa9c9a5d2af99bffe5345d03c22416  Xiaomi-12.m4
 ce485d20cbd3e23f93c3bd7f77028fbd21aa4b95f34914c5c9af3c180d42647bcb4dfbcaf8a24f4b3a4e51ef04f881740f393f335403eade343183dd04b0f741  module_sal.m4

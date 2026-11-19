@@ -4,7 +4,8 @@
 # The repository is the source of truth: edit pmaports/ here, then run this
 # (build.sh runs it for you). Checksums of local source files are refreshed in
 # place before copying, so "PLACEHOLDER" entries and stale sums are fixed
-# without a download.
+# without a download. Symlinks in a package directory (the device package
+# links its call audio tools from scripts/) are copied as files.
 set -e
 . "$(dirname "$0")/env.sh"
 
@@ -49,7 +50,7 @@ for pkg in $PACKAGES; do
 	src="$REPO/pmaports/device/testing/$pkg"
 	[ -d "$src" ] || die "missing $src"
 	refresh_checksums "$src"
-	rsync -a --delete "$src/" "$PMAPORTS/device/testing/$pkg/"
+	rsync -aL --delete "$src/" "$PMAPORTS/device/testing/$pkg/"
 	echo "    synced $pkg"
 done
 
@@ -57,7 +58,7 @@ for pkg in $TEMP_PACKAGES; do
 	src="$REPO/pmaports/temp/$pkg"
 	[ -d "$src" ] || die "missing $src"
 	refresh_checksums "$src"
-	rsync -a --delete "$src/" "$PMAPORTS/temp/$pkg/"
+	rsync -aL --delete "$src/" "$PMAPORTS/temp/$pkg/"
 	echo "    synced temp/$pkg"
 done
 

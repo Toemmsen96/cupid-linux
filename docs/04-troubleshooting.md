@@ -155,8 +155,14 @@ add `local-bd-address = [ xx xx xx xx xx xx ];` (little-endian) to the
   signal): kernel older than r16 or device package older than r18 (wrong
   TDM lane / frame-sync polarity), see
   [05-hardware-status.md](05-hardware-status.md#speakers-73).
-- No sound in calls: call audio (modem voice through the DSP) is not
-  implemented; calls connect silently.
+- No sound in calls: call audio (modem voice through the DSP) is still
+  being brought up, see [09-call-audio.md](09-call-audio.md). Check that
+  `/lib/firmware/updates/qcom/sm8450/Xiaomi-12-voice.bin` exists
+  (`journalctl -u cupid-voice-firmware`: it needs the stock `vendor`
+  partition, i.e. a phone whose super partition was not wiped), that the
+  card switches to the "Voice Call" profile during the call
+  (`pactl list cards | grep 'Active Profile'`) and that the kernel logs
+  "voice call graphs started". Speakerphone is not supported yet.
 
 ## Remoteprocs, battery, modem
 

@@ -1,0 +1,15 @@
+[Unit]
+Description=Generate the voice call firmware from the stock calibration database
+After=local-fs.target
+# Before any login session, whose sound server switches the card to the
+# Voice Call profile and with it requests the file.
+Before=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/cupid-voice-firmware
+# The vendor partition mount stays private to this unit.
+PrivateMounts=yes
+
+[Install]
+WantedBy=multi-user.target
