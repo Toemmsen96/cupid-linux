@@ -1,0 +1,67 @@
+From 7e117e6ac53208918de13f24d1cc8850c78bd5fe Mon Sep 17 00:00:00 2001
+From: Toemmsen96 <147745097+Toemmsen96@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 19:29:59 +0100
+Subject: [PATCH] Show the mode at login only when a USB cable is plugged in
+
+At start-up the daemon showed the USB mode notification unconditionally,
+so it appeared after every login even with nothing plugged in, and stayed
+until a cable was plugged in and out again. usb-moded only signals
+changes and has no cable state method, so check the USB power supplies
+the kernel reports (type USB*, online) and show it at start-up only if
+one is online. Devices without a USB power supply keep the old behaviour.
+---
+ usb-moded-notify.py | 25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/usb-moded-notify.py b/usb-moded-notify.py
+index 6cdeeb8..b02e84a 100644
+--- a/usb-moded-notify.py
++++ b/usb-moded-notify.py
+@@ -4,6 +4,8 @@
+ 
+ import gi
+ import dbus
++import glob
++import os
+ from time import sleep
+ from dbus.mainloop.glib import DBusGMainLoop
+ 
+@@ -149,6 +151,24 @@ def show_notification():
+         show_notification()
+ 
+ 
++def usb_connected():
++    """Whether a USB cable is plugged in (a host or a charger), going by the
++    USB power supplies the kernel reports. Without any, assume it is."""
++    found = False
++    for psy in glob.glob("/sys/class/power_supply/*"):
++        try:
++            with open(os.path.join(psy, "type")) as f:
++                if not f.read().strip().startswith("USB"):
++                    continue
++            found = True
++            with open(os.path.join(psy, "online")) as f:
++                if f.read().strip() == "1":
++                    return True
++        except OSError:
++            continue
++    return not found
++
++
+ def close_notification():
+     global notification
+     if notification:
+@@ -174,6 +194,9 @@ bus.add_signal_receiver(
+ )
+ 
+ print("Monitoring USB events...")
+-show_notification()
++# usb-moded only signals changes: show the mode at login only if a cable is
++# already plugged in, not on every login
++if usb_connected():
++    show_notification()
+ loop = GLib.MainLoop()
+ loop.run()
+-- 
+2.56.1
+

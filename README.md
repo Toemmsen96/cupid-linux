@@ -94,7 +94,8 @@ pmaports/device/testing/
   linux-postmarketos-qcom-sm8450-cupid-next/  6.17-rc1 kernel (display, ultra-wide camera)
   linux-postmarketos-qcom-sm8450-cupid-mainline/  Linux 7.3 from kernel.org + cupid patches
 pmaports/temp/   overlays of upstream packages: libcamera (cameras), modemmanager (GPS),
-                 hexagonrpcd (audio PD); phosh-plugin-mic-status-icon (microphone indicator)
+                 hexagonrpcd (audio PD), usb-moded-notify (USB mode notice only with a
+                 cable); phosh-plugin-mic-status-icon (microphone indicator)
 scripts/      setup, sync, build, flash, stock dump, sdcard backup, devicetree check, pmb wrapper,
               camx-sensormodule.py / camx-tuning.py (stock camera module and tuning decoders)
 docs/         prerequisites, build, install, troubleshooting, hardware status, Arch, firmware

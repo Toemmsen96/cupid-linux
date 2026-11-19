@@ -1,0 +1,33 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=usb-moded-notify
+pkgver=0.4.2
+pkgrel=100
+# cupid-linux overlay of Alpine's community/usb-moded-notify 0.4.2-r2: 0001
+# shows the USB mode notification at login only when a cable is plugged in
+# (it appeared after every login). The tarball comes from Alpine's distfiles
+# mirror (same sha512 as Alpine's), as upstream's GitLab was unreachable.
+pkgdesc="Simple daemon for handling usb-moded dialog events with notifications"
+url="https://gitlab.nura.eco/nura/usb-moded-notify"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	py3-dbus
+	py3-gobject3
+	python3
+	"
+makedepends="just"
+subpackages="$pkgname-openrc $pkgname-systemd"
+source="https://distfiles.alpinelinux.org/distfiles/edge/usb-moded-notify-$pkgver.tar.gz
+	0001-show-the-mode-at-login-only-when-a-cable-is-plugged.patch
+	"
+options="!check" # no tests
+
+package() {
+	PREFIX=/usr DESTDIR="$pkgdir" just install
+}
+
+sha512sums="
+9cdfc9ad9fd6db82d332ec7fd0e626e1b7810e8828e941cc0e8f05344e697d6f7b294f9a2f9dd1af55810a1c37508d6db4be160f58f91cef01952ed3b08b670c  usb-moded-notify-0.4.2.tar.gz
+e8c43cbbbbcfb3cb74411d3de44d52fa6ef04ef7d4f1fe7a271dafe50ebde3778ff7705d0c2fce677149ea6570cd347dd0e4520240a64bfe71bf1d175d0a51ba  0001-show-the-mode-at-login-only-when-a-cable-is-plugged.patch
+"

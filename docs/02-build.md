@@ -24,6 +24,7 @@ scripts/build.sh                 # packages + image + vbmeta
 `device-xiaomi-cupid`, the selected kernel package and the overlays in
 `pmaports/temp/` (`TEMP_PACKAGES` in `scripts/env.sh`: libcamera with the
 camera support, ModemManager with the GPS fix, hexagonrpcd with the audio PD,
+usb-moded-notify showing the USB mode notice only with a cable plugged in,
 and the phosh microphone indicator plugin), then
 `pmbootstrap install --single-partition`, `pmbootstrap export out/` and
 `avbtool make_vbmeta_image`.
