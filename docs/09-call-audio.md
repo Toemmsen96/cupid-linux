@@ -172,9 +172,12 @@ volume step: resampler output rates (0x421f), the TX MFC formats
   running backends.
 - Audio PD (works, 2026-11-17): mainline fastrpc creates it with
   `FASTRPC_IOCTL_INIT_CREATE_STATIC` "audiopd" and hands the ADSP a remote
-  heap from the fastrpc node's `memory-region` (8 MiB pool, `qcom,vmids`
-  LPASS + ADSP_HEAP, as on kodiak/sm8250); the cupid DTS adds it (kernel
-  r18). `pmaports/temp/hexagonrpcd` (0.4.0-r100) adds `hexagonrpcd -a`,
+  heap from the fastrpc node's `memory-region` (8 MiB, `qcom,vmids`
+  LPASS + ADSP_HEAP); the cupid DTS adds it (kernel r18). It must be
+  `no-map` (r23): fastrpc assigns the whole region to the DSP at probe, and
+  as a reusable CMA pool like kodiak's its pages were still lent to Linux,
+  which crashed the phone under memory pressure (see
+  [04-troubleshooting](04-troubleshooting.md#crashes-under-memory-load)). `pmaports/temp/hexagonrpcd` (0.4.0-r100) adds `hexagonrpcd -a`,
   which creates the PD and serves its file requests, and the unit
   `hexagonrpcd-adsp-audiopd.service` (enabled by the device package's
   preset from r22). With it running, the stock voice graphs including ECNS

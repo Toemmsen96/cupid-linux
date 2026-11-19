@@ -25,6 +25,23 @@ Serial console is the only early-boot channel: UART pads are on the board
 `deviceinfo_kernel_cmdline`. ramoops does not survive a reset on this platform
 (XBL scrubs DRAM).
 
+## Crashes under memory load
+
+The phone reboots while something uses a lot of memory or writes large
+files (unpacking archives, downloads, running an LLM), and
+`journalctl -b -1 -k | grep -A3 "external abort"` shows
+`Internal error: synchronous external abort` in `clear_page`, `copy_page`
+or `__arch_copy_from_user`. Linux handed out a page that the secure world
+no longer lets it touch. Up to kernel r22 this was the ADSP remote heap
+(0xff800000, 8 MiB): it was a reusable CMA pool, and fastrpc assigns it to
+the DSP; r23 declares it `no-map`. To place a new fault, translate the
+faulting linear-map address (`x0` in `clear_page`) to a physical one:
+physical = address - 0xffff000000000000 + 0x80000000 (no linear-map
+randomisation on this phone), then compare with
+`dmesg | grep "reserved mem"`. Any region that firmware or a driver hands
+to a remote processor (`qcom,vmids`, `qcom_scm_assign_mem`) must be
+`no-map`, never `reusable`.
+
 ## Black screen
 
 Not necessarily a failure. Wait a minute, then `ssh <user>@172.16.42.1`.
